@@ -1,0 +1,28 @@
+Package: StatecCMP
+Type: Package
+Title: Convenience Wrappers and Functions for Statec
+Version: 0.0.1
+Date: 2022-12-27
+Authors@R: c(person(given=c("Andreï", "Victorovitch"), family="Kostyrka",
+        role="aut", email="andrei.kostyrka@gmail.com"),
+		person(given="Michel", family="Kostyrka",
+        role="cre", email="michel.geller@statec.etat.lu")
+		)
+Depends: R (>= 3.4.0)
+Imports: 
+    lubridate,
+    seasonal,
+	glmnet,	Matrix,
+	restriktor,
+	car, sandwich,
+	MASS,
+	imager,
+	imputeTS, missMDA, Amelia,
+    parallel, withr
+Description: An R package that contains the frequently used functions and
+             wrappers for use in Statec. Most functions are designed to simplify seasonal
+             adjustment, dynamic factor model estimation, error-correction model
+             estimation, and output formatting.
+License: EUPL
+Encoding: UTF-8
+RoxygenNote: 7.2.3
