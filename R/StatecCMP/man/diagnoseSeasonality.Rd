@@ -13,7 +13,7 @@ diagnoseSeasonality(
   sample.end = NULL,
   force.multiplicative = FALSE,
   m7.threshold = 1,
-  q.threshold = 1,
+  m7.rule = c("robust", "original", "average", "force"),
   transform.aicdiff = -2,
   tradingdays.aicdiff = 0,
   plot.file = NULL,
@@ -39,7 +39,7 @@ diagnoseSeasonality(
 
 \item{m7.threshold}{Numeric between 0 and 3: the procedure will produce SA series if the M7 statistic is less than this threshold. A value of 3 means that adjustment is always done.}
 
-\item{q.threshold}{Numeric between 0 and 3 (like m7.threshold): changes the contents of the information messages depending on the acceptability threshold (purely cosmetic).}
+\item{m7.rule}{Character: what kind of indicator compare to `m7.threshold`.}
 
 \item{transform.aicdiff}{Numeric: the AICc difference between the additive (linear) and multiplicative (log) model; use log if AICc(nolog) - AICc(log) < aicdiff; by default, prefers multiplicative models}
 
@@ -59,20 +59,52 @@ Since seasonal adjustment via X13 implies estimation with TRAMO-like methods tha
 the returned series "predicted" will contain fitted values in places where the original data had middle gaps.}
 }
 \value{
-A list: logical "seasonality" indicating whether there is stable seasonality,
-logical "multiplicative" indicating whether the adjustment model is multiplicative,
-a list "quality" containing brief diagnostic information,
-mts "series" containing the original, adjustment factor (with forecast), adjusted and forecast series,
-and the output of "seas" for the best model.)
+A list:
+* `seasonality`: a logical indicating whether there is either seasonal or calendar effects
+* `multiplicative`: a logical indicating whether the adjustment model is multiplicative
+* `quality`: a list containing brief diagnostic information
+* `series`, an mts containing the decomposition
+* `seas`: the full output of the X13 `seas()` run for the best model)
+* `date`: the dates of the input series
+* `si.robtests`: robust seasonality test results (IRLS with HAC for seasonal and/or yearly dummies)
 }
 \description{
 Diagnose seasonality, adjust the series, print and visualise the results
 }
 \examples{
-# Simulating ARIMA with trend, decaying seasonality, one level shift and one additive outlier
+# Simulating ARIMA with trend, decaying seasonality, 1 LS and 1 AO
 x <- seq(0, 7.99, 1/12)
 set.seed(1)
-y <- ts(10 + 0.05*x + 5*(x >= 6) - 4*(x == 5) + 40/(x+20)*cos(x*pi*2) +
-        arima.sim(n = 96, list(ar = 0.8)), start = c(2010, 1), freq = 12)
-diagnoseSeasonality(y)
+ybase <- arima.sim(n = 96, list(ar = 0.8, ma = 0.3)) # ARIMA(1, 0, 1)
+yseas <- 40/(x+20)*cos(x*pi*2)
+oreg <- 5*(x >= 6) - 4*(x == 5)
+y1 <- ts(10 + 0.05*x + oreg + yseas + ybase, start = c(2010, 1), freq = 12)
+ysa <- diagnoseSeasonality(y)
+summary(ysa$seas) # Some calendar effects were auto-detected
+ysal <- diagnoseSeasonality(y, force.multiplicative = TRUE)
+
+# Only seasonality
+y2 <- ts(10 + 1.5*cos(x*pi*2) + ybase, start = c(2010, 1), freq = 12)
+y2sa <- diagnoseSeasonality(y2)
+
+# Only calendar effects---suppose that Fridays bring more sales
+dates <- seq.Date(as.Date("2010-01-01"), as.Date("2017-12-31"), by = "day")
+wdays   <- as.numeric(strftime(dates, "\%u"))
+yearmonth <- format(dates, "\%Y-\%m")
+nfridays <- aggregate(wdays == 5, by = list(yearmonth), FUN = sum)$x
+y3 <- ts(10 + 0.2*x + ybase + nfridays, start = c(2010, 1), freq = 12)
+plot(y3) # No obvious seasonality
+y3sa <- diagnoseSeasonality(y3)
+
+# Only weekend effects
+set.seed(1)
+nwe <- aggregate(wdays \%in\% 6:7, by = list(yearmonth), FUN = sum)$x / 5
+y4 <- ts(rnorm(96) + nwe, start = c(2010, 1), freq = 12)
+y4sa <- diagnoseSeasonality(y4)
+plot(ts.union(y4sa$series[, "adjfac"], nwe - mean(nwe)),
+     plot.type = "single", col = 2:1)
+
+# Quarterly data
+apsa <- diagnoseSeasonality(datasets::AirPassengers)
+summary(apsa$seas)
 }

@@ -51,9 +51,9 @@ imputePanel7(
 
 \item{calendar}{Passed to X13.}
 
-\item{sample.begin}{Passed to diagnoseSeasonality() (shrink the estimation sample).}
+\item{sample.begin}{Index (e.g. `c(2010, 1)`) to shrink the estimation sample if needed.}
 
-\item{sample.end}{Passed to diagnoseSeasonality() (shrink the estimation sample).}
+\item{sample.end}{Index (e.g. `c(2025, 4)`) to shrink the estimation sample if needed.}
 
 \item{name}{Passed to diagnoseSeasonality() (series name).}
 

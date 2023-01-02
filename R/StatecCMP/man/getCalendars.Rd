@@ -4,7 +4,7 @@
 \alias{getCalendars}
 \title{Read national calendars into the global environment.}
 \usage{
-getCalendars(country = "Luxembourg", path = NULL)
+getCalendars(country = "Luxembourg", suffix = "lu", path = NULL)
 }
 \arguments{
 \item{country}{Character: file name (without the "-Q.csv") prefix}

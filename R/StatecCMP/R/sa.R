@@ -142,7 +142,7 @@ dateAsEV <- function(x) {
 #' @param sample.end An integer vector of length 2 denoting the end of forecast period. By default, predicts the seasonality adjustment factor for 1 year out of sample.
 #' @param force.multiplicative If TRUE, forces multiplicative adjustment.
 #' @param m7.threshold Numeric between 0 and 3: the procedure will produce SA series if the M7 statistic is less than this threshold. A value of 3 means that adjustment is always done.
-#' @param q.threshold Numeric between 0 and 3 (like m7.threshold): changes the contents of the information messages depending on the acceptability threshold (purely cosmetic).
+#' @param m7.rule Character: what kind of indicator compare to `m7.threshold`.
 #' @param transform.aicdiff Numeric: the AICc difference between the additive (linear) and multiplicative (log) model; use log if AICc(nolog) - AICc(log) < aicdiff; by default, prefers multiplicative models
 #' @param tradingdays.aicdiff Numeric: the AICc difference for the TD or WD dummies to be added into the model (if negative, prefers more parsimonious models)
 #' @param plot.file A string containing the path to the output PNG file. If NULL, plot to the current device. Using NA prevents any plot from being created.
@@ -155,25 +155,58 @@ dateAsEV <- function(x) {
 #' Since seasonal adjustment via X13 implies estimation with TRAMO-like methods that allow missingness,
 #' the returned series "predicted" will contain fitted values in places where the original data had middle gaps.
 #'
-#' @return A list: logical "seasonality" indicating whether there is stable seasonality,
-#' logical "multiplicative" indicating whether the adjustment model is multiplicative,
-#' a list "quality" containing brief diagnostic information,
-#' mts "series" containing the original, adjustment factor (with forecast), adjusted and forecast series,
-#' and the output of "seas" for the best model.)
+#' @return A list:
+#' * `seasonality`: a logical indicating whether there is either seasonal or calendar effects
+#' * `multiplicative`: a logical indicating whether the adjustment model is multiplicative
+#' * `quality`: a list containing brief diagnostic information
+#' * `series`, an mts containing the decomposition
+#' * `seas`: the full output of the X13 `seas()` run for the best model)
+#' * `date`: the dates of the input series
+#' * `si.robtests`: robust seasonality test results (IRLS with HAC for seasonal and/or yearly dummies)
 #' @export
 #'
 #' @examples
-#' # Simulating ARIMA with trend, decaying seasonality, one level shift and one additive outlier
+#' # Simulating ARIMA with trend, decaying seasonality, 1 LS and 1 AO
 #' x <- seq(0, 7.99, 1/12)
 #' set.seed(1)
-#' y <- ts(10 + 0.05*x + 5*(x >= 6) - 4*(x == 5) + 40/(x+20)*cos(x*pi*2) +
-#'         arima.sim(n = 96, list(ar = 0.8)), start = c(2010, 1), freq = 12)
-#' diagnoseSeasonality(y)
+#' ybase <- arima.sim(n = 96, list(ar = 0.8, ma = 0.3)) # ARIMA(1, 0, 1)
+#' yseas <- 40/(x+20)*cos(x*pi*2)
+#' oreg <- 5*(x >= 6) - 4*(x == 5)
+#' y1 <- ts(10 + 0.05*x + oreg + yseas + ybase, start = c(2010, 1), freq = 12)
+#' ysa <- diagnoseSeasonality(y)
+#' summary(ysa$seas) # Some calendar effects were auto-detected
+#' ysal <- diagnoseSeasonality(y, force.multiplicative = TRUE)
+#'
+#' # Only seasonality
+#' y2 <- ts(10 + 1.5*cos(x*pi*2) + ybase, start = c(2010, 1), freq = 12)
+#' y2sa <- diagnoseSeasonality(y2)
+#'
+#' # Only calendar effects---suppose that Fridays bring more sales
+#' dates <- seq.Date(as.Date("2010-01-01"), as.Date("2017-12-31"), by = "day")
+#' wdays   <- as.numeric(strftime(dates, "%u"))
+#' yearmonth <- format(dates, "%Y-%m")
+#' nfridays <- aggregate(wdays == 5, by = list(yearmonth), FUN = sum)$x
+#' y3 <- ts(10 + 0.2*x + ybase + nfridays, start = c(2010, 1), freq = 12)
+#' plot(y3) # No obvious seasonality
+#' y3sa <- diagnoseSeasonality(y3)
+#'
+#' # Only weekend effects
+#' set.seed(1)
+#' nwe <- aggregate(wdays %in% 6:7, by = list(yearmonth), FUN = sum)$x / 5
+#' y4 <- ts(rnorm(96) + nwe, start = c(2010, 1), freq = 12)
+#' y4sa <- diagnoseSeasonality(y4)
+#' plot(ts.union(y4sa$series[, "adjfac"], nwe - mean(nwe)),
+#'      plot.type = "single", col = 2:1)
+#'
+#' # Quarterly data
+#' apsa <- diagnoseSeasonality(datasets::AirPassengers)
+#' summary(apsa$seas)
 diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
                                 bfcast.tails = FALSE,
                                 sample.begin = NULL, sample.end = NULL,
                                 force.multiplicative = FALSE,
-                                m7.threshold = 1, q.threshold = 1,
+                                m7.threshold = 1,
+                                m7.rule = c("robust", "original", "average", "force"),
                                 transform.aicdiff = -2, tradingdays.aicdiff = 0,
                                 plot.file = NULL, seasonal.plot = TRUE,
                                 min.outliers = 1, verbose = 2
@@ -182,13 +215,14 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
   update.seas <- utils::getFromNamespace("update.seas", "seasonal")
   predict.seas <- utils::getFromNamespace("predict.seas", "seasonal")
 
+  m7.rule <- m7.rule[1]
   freq <- stats::frequency(x)
   if (!(freq %in% c(4, 12))) stop("The data are not monthly or quarterly, aborting.")
   if (!is.null(calendar)) {
     if (freq != stats::frequency(calendar)) stop("The frequency of the data is not equal to that of the calendar, aborting.")
-    if (verbose > 1) cat("Using the user-supplied calendar (presumably Luxembourgish).\n")
+    if (verbose > 1) cat("Using the user-supplied national calendar.\n")
   } else {
-    if (verbose > 1) cat("Using the default X13 calendar (non-Luxembourgish).\n")
+    if (verbose > 1) cat("Using the default X13 calendar.\n")
   }
 
   ef <- function(e) return(NULL) # For try-catching and debugging
@@ -244,11 +278,17 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
     return(ret)
   }
   printSum <- function(seasmod, txt = "-- Estimated a seasonal model", ndigits = 3) {
-    n <- as.integer(seasmod[["udg"]]["nobs"])
-    nef <- as.integer(seasmod[["udg"]]["nefobs"])
-    avgAIC <- as.numeric(seasmod[["udg"]]["aicc"]) / nef
-    fullAIC <- avgAIC * n
-    cat(txt, " (obs=", nef, "). AICc/obs = ", sprintf(paste0("%1.", ndigits, "f"), avgAIC), ", AICcS = ", sprintf("%1.1f", fullAIC), ".\n", sep = "")
+    if (!is.null(seasmod)) {
+      n <- as.integer(seasmod[["udg"]]["nobs"])
+      nef <- as.integer(seasmod[["udg"]]["nefobs"])
+      avgAIC <- as.numeric(seasmod[["udg"]]["aicc"]) / nef
+      fullAIC <- avgAIC * n
+      avgAICs <- sprintf(paste0("%1.", ndigits, "f"), avgAIC)
+      fullAICs <- sprintf("%1.1f", fullAIC)
+    } else {
+      nef <- avgAICs <- fullAICs <- "FAIL"
+    }
+    cat(txt, " (obs=", nef, "). AICc/obs = ", avgAICs, ", AICcS = ", fullAICs, ".\n", sep = "")
   }
 
 
@@ -316,6 +356,8 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
     wd.vars <- c(wd.vars, miss.vars)
     nod.vars <- c(nod.vars, miss.vars)
   }
+  cal.regs <- c("easter[8]", "lpyear", "const", "tdnolpyear", "td1coef", "td1nolpyear")
+  # These are the regressor names that are not outliers
 
   # Step 1: choosing the transformation; using common outliers
   if (any(this.ser <= 0)) {
@@ -333,7 +375,7 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
                                     forecast.save = c("bct", "fct")), error = efv)
     printSum(a.td, "-- Model: additive, 6 TD + LY + Easter")
   } else { # All positive values, selection possible
-    if (verbose > 0) cat("Estimating 2 transformation models (additive / multiplicative)...\n")
+    if (verbose > 0) cat("Estimating transformation models...\n")
     a.td.log <- tryCatch(seasonal::seas(x = this.ser, x11 = "", outlier.types = c("ao", "ls", "tc"),
                                         regression.variables = td.vars, xreg = td.cal, regression.usertype = td.types,
                                         automdl.maxorder = c(3, 1), estimate.tol = 1e-7,
@@ -381,20 +423,20 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
                                ", AICc(log) = ", sprintf("%1.1f", as.numeric(a.td.auto$udg["aictest.trans.aicc.log"])), ".\n", sep = "")
         }
         # Choosing the transformation and setting the default model with 6 TDs
-        trans.fun <- if (isTRUE(a.td.auto$udg["aictrans"] != "No transformation") | force.multiplicative) "log" else "none"
+        trans.fun <- if (force.multiplicative) "log" else seasonal::transformfunction(a.td.auto)
         a.td <- if (trans.fun == "log") a.td.log else a.td.nolog
       } else { # Something went wrong with the same set of outliers -- possibly too many -- reduce the number
         if (verbose > 0) cat("! Re-trying with fewer outliers (existing in both models).\n")
         log.outlier.tab <- table(c(a.td.log$model$regression$variables, a.td.nolog$model$regression$variables))
         log.outlier.tab <- log.outlier.tab[log.outlier.tab == 2]
-        log.outl.reg <- sort(setdiff(names(log.outlier.tab), c("easter[8]", "lpyear", "const", "tdnolpyear", "td1coef", "td1nolpyear")))
+        log.outl.reg <- sort(setdiff(names(log.outlier.tab), cal.regs))
         if (verbose > 1) cat("Revised outlier regressors used in the transformation choice: ", paste0(log.outl.reg, collapse = ", "), "\n", sep = "")
 
         a.td.auto <- tryCatch(update.seas(a.td.nolog, regression.variables = unique(c(td.vars, log.outl.reg)), outlier = NULL, transform.function = "auto", transform.aicdiff = transform.aicdiff), error = efv)
         if (!is.null(a.td.auto)) {
           if (verbose > 1) printSum(a.td.auto, "-- Model: auto-tr., 6 TD + LY + Easter, fewer common outliers")
           if (verbose > 1) cat("Re-estimation with fewer common outliers succeeded, no convergence issues.\nChoosing the best model based on common outliers, using the original model with its specific outliers.\n")
-          trans.fun <- if (isTRUE(a.td.auto$udg["aictrans"] != "No transformation") | force.multiplicative) "log" else "none"
+          trans.fun <- if (force.multiplicative) "log" else seasonal::transformfunction(a.td.auto)
         } else {
           if (verbose > 0) cat("! Re-estimation with fewer common outliers was unsuccessful.\n! Doing selection with the original models.\n! The results might be sub-optimal because the outliers are different.\n")
           log.mod.list <- list(a.td.log, a.td.nolog)
@@ -429,7 +471,7 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
                                         M = rep(NA, 11), Q_M2 = NA, IC = rep(NA, 3)),
                          series = stats::ts.union(original = x, seasonal = 0, adjusted = x, predicted = x), seas = NULL, date = ts2date(x)))
     } else {
-      trans.fun <- if (isTRUE(a.td$udg["aictrans"] != "No transformation") | force.multiplicative) "log" else "none"
+      trans.fun <- if (force.multiplicative) "log" else seasonal::transformfunction(a.td)
     }
   }
 
@@ -500,7 +542,7 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
       if (verbose > 0) cat("! Re-trying with fewer outliers (existing in at least 2 out of 3 models).\n")
       outlier.tab <- table(c(a.td$model$regression$variables, a.wd$model$regression$variables, a.nod$model$regression$variables))
       outlier.tab <- outlier.tab[outlier.tab >= 2]
-      outl.reg <- sort(setdiff(names(outlier.tab), c("easter[8]", "lpyear", "const", "tdnolpyear", "td1coef", "td1nolpyear")))
+      outl.reg <- sort(setdiff(names(outlier.tab), cal.regs))
       if (verbose > 1) cat("Outlier regressors used in testing: ", paste0(outl.reg, collapse = ", "), "\n", sep = "")
       a.td2 <- tryCatch(update.seas(a.td, regression.variables = unique(c(td.vars, outl.reg)), outlier = NULL, transform.function = trans.fun), error = efv)
       if (!is.null(a.td2)) {
@@ -521,14 +563,14 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
         eff.len <- unname(sapply(mod.list, function(x) if (!is.null(x)) as.numeric(x[["udg"]]["nefobs"]) else 0))
         aiccs <- aiccs / eff.len * n
       } else {
-        if (verbose > 0) cat("! Re-estimation with fewer common outliers was unsuccessful.\n! Doing selection with the original models.\n! The results might be sub-optimal because the outliers are different.\n")
+        if (verbose > 0) cat("! Re-estimation with fewer common outliers was unsuccessful.\n! Doing selection with the original models, but the results might be misleading because the outliers are different.\n")
         mod.list <- list(a.td, a.wd, a.nod)
         aiccs <- unname(sapply(mod.list, function(x) if (!is.null(x)) as.numeric(x[["udg"]]["aicc"]) else Inf))
         eff.len <- unname(sapply(mod.list, function(x) if (!is.null(x)) as.numeric(x[["udg"]]["nefobs"]) else 0))
         aiccs <- aiccs / eff.len * n
       }
     } else { # Min. outliers > 1
-      if (verbose > 0) cat("! Re-estimation based on ", min.outliers, " common outliers (fixed number) was unsuccessful!\n! Doing selection with the original models.\n! The results might be sub-optimal because the outliers are different.\n", sep = "")
+      if (verbose > 0) cat("! Re-estimation based on ", min.outliers, " common outliers unsuccessful!\n! Doing selection with the original models, but the results might be misleading because the outliers are different.\n", sep = "")
       mod.list <- list(a.td, a.wd, a.nod)
       aiccs   <- unname(sapply(mod.list, function(x) if (!is.null(x)) as.numeric(x[["udg"]]["aicc"]) else Inf))
       eff.len <- unname(sapply(mod.list, function(x) if (!is.null(x)) as.numeric(x[["udg"]]["nefobs"]) else 0))
@@ -540,7 +582,8 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
     best.type <- "nod"
     if (aiccs["wd"] - aiccs["nod"] < tradingdays.aicdiff) best.type <- "wd"
     if ((aiccs["td"] - aiccs[best.type]) < tradingdays.aicdiff) best.type <- "td"
-    if (verbose > 0) switch(best.type, td = cat("*** The week-day effects (6 TD) are different and important.\n"), wd = cat("*** The number of week days (1 TD) is important.\n"), nod = cat("*** The week-day effect is absent in these series (0 TD).\n"))
+    if (verbose > 0) switch(best.type, td = cat("*** The week-day effects (6 TD) are different and important.\n"),
+                            wd = cat("*** The number of week days (1 TD) is important.\n"), nod = cat("*** The week-day effect is absent in these series (0 TD).\n"))
     best.mod <- switch(best.type, td = a.td, wd = a.wd, nod = a.nod)
   } else {
     warning("No model with the recommended settings could be estimated. Trying with the simplest default X13 settings.")
@@ -548,7 +591,7 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
     best.mod <- seasonal::seas(this.ser, x11 = "")
   }
   xregs <- best.mod$model$regression$variables
-  if (verbose > 1) cat("Outlier regressors in the model with forced Easter and LY effects: ", paste0(sort(setdiff(xregs, c("easter[8]", "lpyear", "const", "td1nolpyear"))), collapse = ", "), "\n", sep = "")
+  if (verbose > 1) cat("Outlier regressors in the model with forced Easter and LY effects: ", paste0(sort(setdiff(xregs, cal.regs)), collapse = ", "), "\n", sep = "")
 
   # Now testing for Easter and other effects because it was forced
   # Keeping the same outlier and regressors
@@ -581,19 +624,129 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
   keep.easter <- "Easter[8]" %in% names(best.mod$est$coefficients)
   keep.ly <- "Leap Year" %in% names(best.mod$est$coefficients)
   if (verbose > 0) cat("*** Easter effect: ", if (!keep.easter) "NO" else "YES", ", leap-year effect: ", if (!keep.ly) "NO" else "YES", ".\n", sep = "")
-  if (verbose > 0) cat("*** Outlier regressors: ", paste0(sort(setdiff(best.mod$model$regression$variables, c("easter[8]", "lpyear", "const"))), collapse = ", "), "\n", sep = "")
+  if (verbose > 0) cat("*** Outlier regressors: ", paste0(sort(setdiff(best.mod$model$regression$variables, cal.regs)), collapse = ", "), "\n", sep = "")
   if (verbose > 1) printSym("-", linelen)
 
   this.stat <- getStat(best.mod)
 
+  # Preparing the separate decomposed series
+  x.sa <- best.mod$series$d11
+  x.adjfac <- best.mod$series$d16 # Seasonal and calendar effects
+  x.seas <- best.mod$series$d10
+  x.cal <- if (this.stat$log) best.mod$series$d16 / best.mod$series$d10 else best.mod$series$d16 - best.mod$series$d10
+  x.trend <- best.mod$series$d12
+  x.ir <- best.mod$series$d13
+  do.cal <- !isTRUE(all.equal(diff(as.numeric(x.cal)), rep(0, length(x.cal)-1)))
+  # Is there any deterministic calendar effect? No calendar --> d10 = d16
+  x.seas.old <- x.seas # The final x.seas is determined via checks
+
+  # Improvement over X13: some simple and robust seasonality tests
+  # The Kruskal--Wallis and Friendman are non-robust to auto-correlation
+  # We run two simple linear regressions and test joint significance
+  # 1: Regress the (S+I) on seasonal dummies (robust to outliers + robust ANOVA)
+  # 2: Regress the (S+I) onto the years and periods; test if something changes in years
+  si <- if (this.stat$log) x.seas * x.ir else x.seas + x.ir
+  vHAC <- function(x) sandwich::kernHAC(x, prewhite = 0, kernel = "Bartlett", bw = sandwich::bwNeweyWest)
+  vHC <- function(x) sandwich::vcovHC(x, type = "HC0") # Fallback VCOV if vHAC fails
+
+  lm.seas <- tryCatch(MASS::rlm(si ~ factor(stats::cycle(si)), maxit = 100), error = efv)
+  if (is.null(lm.seas)) lm.seas <- stats::lm(rank(si) ~ factor(stats::cycle(si)))
+  test.seas <- tryCatch(car::linearHypothesis(lm.seas, names(stats::coef(lm.seas))[-1], vcov. = vHAC), error = efv)
+  if (is.null(test.seas)) test.seas <- tryCatch(car::linearHypothesis(lm.seas, names(stats::coef(lm.seas))[-1], vcov. = vHC), error = efv)
+  if (is.null(test.seas)) test.seas <- tryCatch(car::linearHypothesis(lm.seas, names(stats::coef(lm.seas))[-1]), error = function(e) return("Hypothesis testing failed."))
+  attr(test.seas, "heading") <- c("Seasonalily model: Y_ij = a_i + U_ij", "(HAC-robust ANOVA for seasonal dummies in a robust regression)", attr(test.seas, "heading"))
+
+  si.year <- myYear(si)
+  lm.stab.seas <- tryCatch(MASS::rlm(si ~ factor(stats::cycle(si)) + factor(si.year), maxit = 100), error = efv)
+  if (is.null(lm.stab.seas)) lm.stab.seas <- stats::lm(si ~ factor(stats::cycle(si)) + factor(si.year))
+  hyp.stab <- names(stats::coef(lm.stab.seas))[grep("factor\\(si.year\\)", names(stats::coef(lm.stab.seas)))]
+  test.stab.seas <- tryCatch(car::linearHypothesis(lm.stab.seas, hyp.stab, vcov. = vHAC), error = efv)
+  if (is.null(test.stab.seas)) test.stab.seas <- tryCatch(car::linearHypothesis(lm.stab.seas, hyp.stab, vcov. = vHC), error = efv)
+  if (is.null(test.stab.seas)) test.stab.seas <- tryCatch(car::linearHypothesis(lm.stab.seas, hyp.stab), error = function(e) return("Hypothesis testing failed."))
+  attr(test.stab.seas, "heading") <- c("Evolutive seasonalily model: Y_ij = a_i + b_j + U_ij", "(HAC-robust ANOVA in the spirit of Higgins (1975))", attr(test.stab.seas, "heading"))
+
+  robust.m7 <- sqrt((1.5*test.stab.seas$F[2] + 3.5) / test.seas$F[2])
+
+  if (verbose > 1) {
+    cat("Seasonality diagnostics for ", name, ":\n", sep = "")
+    print(this.stat$M)
+    cat("Overall quality, Q_M2: ", this.stat$Q_M2, ".\n", sep = "")
+  } else {
+    if (verbose > 0) cat("Seasonality diagnostics for ", name, ": M7 = ", this.stat$M[7], ", Q_M2 = ", this.stat$Q_M2, " (<1 is OK, >1 is not OK).\n", sep = "")
+  }
+
+  # In case there were missing values, put the regression-based prediction for the 'predicted' series
+  x.pred <- this.ser
+  if (length(miss.inds) > 0) x.pred[miss.inds] <- predict.seas(best.mod)[miss.inds]
+  # Creating the forecast series in any case
+  x.bc <- if (nbcast > 0) seasonal::series(best.mod, "bct") else NULL
+  x.fc <- if (nfcast > 0) seasonal::series(best.mod, "fct") else NULL
+  # Prepending backcasts, appending forecasts
+  x.bf <- if (nbcast > 0) stats::ts(c(x.bc[, "backcast"], x.pred), end = stats::end(x.pred), freq = freq) else x.pred
+  x.bf <- if (nfcast > 0) stats::ts(c(x.bf, x.fc[, "forecast"]), start = stats::start(x.bf), freq = freq) else x.bf
+
+  # Now the choice has to be made: adjust the seasonal component or not?
+  # 4 options: robust M7, original M7, average, or enforce the adjustment (assume M7=0)
+  # Calendar adjustment will always be performed if RegARIMA detected it
+  # If it was not detected, then, the adjusement factor is equal to just the seasonal component
+  seas.strength <- switch(m7.rule, robust = robust.m7, original = this.stat$M[7], average = (robust.m7+this.stat$M[7])/2, force = 0)
+  seas.strength <- round(seas.strength, 2)
+  do.seasadj <- seas.strength <= m7.threshold
+  if (do.cal | do.seasadj) { # There is some seasonality
+    if (verbose > 0) {
+      if (this.stat$Q_M2 <= 1) {
+        cat("There seem to be no immediate seasonality adjustability problems in ", name, ".\n", sep = "")
+      } else {
+        cat("The adjustment could be mediocre (or the trend is flat, which is harmless). Look at the plot just in case.\n", sep = "")
+      }
+      cat("*** Calendar effects: ", if (do.cal) "YES" else "NO", ", seasonal effects: ", if (do.seasadj) "YES" else "NO", " (",
+          switch(m7.rule, robust = "rob. M7 = ", original = "M7 = ", average = "avg. M7 = ", force = "forced M7 = "), seas.strength, ").\n", sep = "")
+    }
+
+    # If there are only calendar but no seasonal effects, then, the adj. factor is equal to the calendar component
+    if (!do.seasadj) {
+      x.adjfac <- x.cal
+      x.sa <- if (this.stat$log) x / x.cal else x - x.cal
+      x.seas <- x # Copying the TS attributes
+      x.seas[1:length(x.seas)] <- as.numeric(this.stat$log)
+      x.ir <- if (this.stat$log) x / x.cal / x.trend else x - x.cal - x.trend
+    }
+    seasonality <- TRUE
+    multiplicative <- this.stat$log
+  } else {
+    if (verbose > 0) {
+      if (this.stat$Q_M2 <= 1) {
+        cat("The series ", name, " do not have stable seasonality and seem regular, skipping.\n", sep = "")
+      } else {
+        cat("The series ", name, " do not have stable seasonality and are very noisy, skipping.\n", sep = "")
+      }
+      cat("*** Neither calendar or seasonal effects were found.\n", sep = "")
+    }
+    x.sa <- x # No adjustment is done
+    x.seas <- x # Copying the TS attributes
+    x.seas[1:length(x.seas)] <- as.numeric(this.stat$log)
+    x.cal <- x.adjfac <- x.seas
+    x.ir <- if (this.stat$log) x / x.trend else x - x.trend
+    seasonality <- FALSE
+    multiplicative <- FALSE
+  }
+
+  out.ts <- stats::ts.union(original = x, adjusted = x.sa, adjfac = x.adjfac, seasonal = x.seas,
+                            calendar = x.cal, trend = x.trend, irregular = x.ir, predicted = x.bf)
+  # Restoring the middle missing values in the adjusted series
+  mg <- findMiddleGaps(out.ts[, "adjusted"])
+  if (length(mg) > 0) {
+    imput <- if (this.stat$log) out.ts[mg, "predicted"] / out.ts[mg, "seasonal"] / out.ts[mg, "calendar"] else out.ts[mg, "predicted"] - out.ts[mg, "seasonal"] - out.ts[mg, "calendar"]
+    out.ts[mg, "adjusted"] <- imput
+  }
+
   # Plotting
-  xs <- range(myYear(this.ser))
+  xs <- range(myTime(this.ser, numeric = TRUE))
   if (head.years > 0) xs[1] <- xs[1] - head.years
   if (tail.years > 0) xs[2] <- xs[2] + tail.years
   xlim <- c(floor(xs[1]), ceiling(xs[2]))
   xs5 <- (ceiling(xlim[1]/5):floor(xlim[2]/5))*5 # Getting round year numbers divisible by 5
-  cal.adj <- if (this.stat$log) best.mod$series$d16 / best.mod$series$d10 else best.mod$series$d16 - best.mod$series$d10 # Getting pure calendar adjustment
-  mycols <- c("#CC003399", "#377EB8BB", "#27ba30", "#000000EE", "#FF4D00")
+  mycols <- c(seas = "#ae2db599", cal = "#377EB8BB", orig = "#27ba30", sa = "#000000EE", trend = "#FF4D00")
   vxs <- setdiff(seq(round(xlim[1]), round(xlim[2])+1), xs5) # Secondary axis lines
 
   # Outliers for plotting
@@ -606,13 +759,13 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
     graphics::layout(matrix(c(1, 1, 2, 2, 3, 3, 4, 5), ncol = 2, nrow = 4, byrow = TRUE), heights = c(1.5, 1, 1, 1))
     # Plot 1: series and adjusted
     withr::local_par(mar = c(0.2, 2, 0.2, 1.2))
-    ylim <- range(best.mod$series$d11, best.mod$series$d12, this.ser, na.rm = TRUE)
+    ylim <- range(x.sa, x.trend, this.ser, na.rm = TRUE)
     ylim <- ylim + c(-0.01, 0.01)*diff(ylim) # Extending slightly
     plot(this.ser, xlim = xlim, ylim = ylim, bty = "n", col = mycols[3], lwd = 2, xaxt = "n")
-    graphics::lines(best.mod$series$d11, col = "#FFFFFFAA", lwd = 4.5) # Adjusted with a halo
-    graphics::lines(best.mod$series$d11, col = mycols[4], lwd = 3) # Adjusted
-    graphics::lines(best.mod$series$d12, col = "#FFFFFFAA", lwd = 3.5) # Trend halo
-    graphics::lines(best.mod$series$d12, col = mycols[5], lwd = 2, lty = 2) # Trend
+    graphics::lines(x.sa, col = "#FFFFFFAA", lwd = 4.5) # Adjusted halo
+    graphics::lines(x.sa, col = mycols[4], lwd = 3) # Adjusted
+    graphics::lines(x.trend, col = "#FFFFFFAA", lwd = 3.5) # Trend halo
+    graphics::lines(x.trend, col = mycols[5], lwd = 2, lty = 2) # Trend
     graphics::abline(v = vxs - 0.5/freq, col = "#0000003A", lty = 2)
     graphics::abline(v = xs5 - 0.5/freq, col = "#0000003A", lty = 1, lwd = 1.5)
     graphics::legend("bottomright", c("Original", "Adjusted", "Trend"), col = mycols[3:5], lwd = c(2, 3, 2), lty = c(1, 1, 2), bg = "#FFFFFFBB", box.col = "#FFFFFFBB")
@@ -620,30 +773,36 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
     graphics::points(this.ser, pch = as.numeric(sym.ts), col = "#FFFFFFEE", lwd = 4)
     graphics::points(this.ser, pch = as.numeric(sym.ts), col = "#FF0000", lwd = 2)
     # Labels at the proper side
-    is.below.trend <- (best.mod$series$d11 < best.mod$series$d12) & is.finite(best.mod$series$d11)
-    if (any(!is.na(ol.ts))) labelsWithHalo(stats::time(this.ser)[!is.na(ol.ts)], y = this.ser[!is.na(ol.ts)], labels = ol.ts[!is.na(ol.ts)], pos = ifelse(is.below.trend[!is.na(ol.ts)], 3, 1), cex = 0.75, offset = 0.4, hscale = 0.003, vscale = 0.01, nhalo = 16)
+    is.below.trend <- (x.sa < x.trend) & is.finite(x.sa)
+    if (any(!is.na(ol.ts))) labelsWithHalo(stats::time(this.ser)[!is.na(ol.ts)], y = this.ser[!is.na(ol.ts)], labels = ol.ts[!is.na(ol.ts)],
+                                           pos = ifelse(is.below.trend[!is.na(ol.ts)], 3, 1), cex = 0.75, offset = 0.4, hscale = 0.003, vscale = 0.01, nhalo = 16)
+
     # Plot 2: only seasonality
     withr::local_par(mar = c(0.1, 2, 2, 1.2))
-    ylim <- range(best.mod$series$d10, cal.adj, na.rm = TRUE)
+    ylim <- range(x.seas.old, x.cal, na.rm = TRUE)
     plot(NULL, NULL, bty = "n", xlim = xlim, ylim = ylim, xaxt = "n")
-    graphics::abline(h = if (isTRUE(this.stat$log)) 1 else 0, lty = 2)
-    graphics::lines(best.mod$series$d10, lwd = 3, col = mycols[1]) # Only seasonal
-    do.cal <- !isTRUE(all.equal(diff(as.numeric(cal.adj)), rep(0, length(cal.adj)-1))) # Is there any deterministic calendar effect? No calendar --> d10 = d16
+    graphics::abline(h = if (this.stat$log) 1 else 0, lty = 2)
+    graphics::lines(x.seas.old, lwd = if (do.seasadj) 3 else 1.5, lty = if (do.seasadj) 1 else 2, col = mycols[1])
     if (do.cal) {
-      graphics::lines(cal.adj, col = "#FFFFFFBB", lwd = 4) # Calendar halo
-      graphics::lines(cal.adj, col = mycols[2],   lwd = 2)
+      graphics::lines(x.cal, col = "#FFFFFFBB", lwd = 4) # Calendar halo
+      graphics::lines(x.cal, col = mycols[2],   lwd = 2)
     }
     graphics::abline(v = vxs - 0.5/freq, col = "#0000003A", lty = 2)
     graphics::abline(v = xs5 - 0.5/freq, col = "#0000003A", lty = 1, lwd = 1.5)
     graphics::legend("topright", if (isTRUE(this.stat$log)) "Multiplicative" else "Additive", bg = "#FFFFFFBB", box.col = "#FFFFFFBB")
     leg.text <- c("Seasonal", "Calendar")
-    if (do.cal) graphics::legend("bottomright", leg.text, ncol = 2, col = mycols[1:2], lwd = c(3, 2), lty = 1, bg = "#FFFFFFBB", box.col = "#FFFFFFBB") else
-      graphics::legend("bottomright", leg.text[1], col = mycols[1], lwd = 3, bg = "#FFFFFFBB", box.col = "#FFFFFFBB")
-    graphics::legend("bottomleft", c(paste0("M7=", sprintf("%1.3f", this.stat$M[7])), paste0("Q2=", sprintf("%1.3f", this.stat$Q_M2))), bg = "#FFFFFFBB", box.col = "#FFFFFFBB")
+    if (do.cal & do.seasadj) {
+      graphics::legend("bottomright", leg.text, ncol = 2, col = mycols[1:2], lwd = c(3, 2), lty = 1, bg = "#FFFFFFBB", box.col = "#FFFFFFBB")
+    } else if (do.cal) {
+      graphics::legend("bottomright", leg.text, ncol = 2, col = mycols[1:2], lwd = c(1.5, 2), lty = 2:1, bg = "#FFFFFFBB", box.col = "#FFFFFFBB")
+    } else graphics::legend("bottomright", leg.text[1], col = mycols[1], lwd = if (do.seasadj) 3 else 1.5, bg = "#FFFFFFBB", box.col = "#FFFFFFBB")
+    leg.text2 <- paste0(c("M7=", "robM7=", "Q2="), sprintf("%1.2f", c(this.stat$M[7], robust.m7, this.stat$Q_M2)))
+    graphics::legend("bottomleft", leg.text2, bg = "#FFFFFFBB", box.col = "#FFFFFFBB", ncol = 3, text.width = NA)
     axs <- xs5
     if (xlim[1] - min(xs5) > 1) axs <- c(min(axs)-5, axs) # Extending short axes
     if (xlim[2] - max(xs5) > 1) axs <- c(axs, max(axs)+5)
     graphics::axis(3, at = axs - 0.5/freq, labels = axs)
+
     # Plot 3: seasonal components
     withr::local_par(mar = c(2, 2, 0.2, 0.2))
     if (!seasonal.plot) {
@@ -652,93 +811,20 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
     } else {
       stats::monthplot(this.ser, box = FALSE)
     }
-    # Plot 3: spectra before and after adjustment
+
+    # Plot 4: spectra before and after adjustment
     withr::local_par(mar = c(2, 0.2, 0.2, 0.2))
     computeSpectrum(this.ser, plot = TRUE, compact = TRUE)
-    xspec <- computeSpectrum(best.mod$series$d11, plot = TRUE, compact = TRUE, put.legend = FALSE)
+    xspec <- computeSpectrum(x.sa, plot = TRUE, compact = TRUE, put.legend = FALSE)
     graphics::legend(attr(xspec, "legend.position"), c("Left: original", "Right: adjusted"), bg = "#FFFFFFBB", box.col = "#FFFFFFBB")
 
-    if (!is.null(plot.file)) grDevices::dev.off()
-  }
-
-  if (verbose > 1) {
-    cat("Seasonality diagnostics for ", name, ":\n", sep = "")
-    print(this.stat$M)
-    cat("Overall quality, Q_M2: ", this.stat$Q_M2, " (<1 is OK, >1 is not OK).\n", sep = "")
-  } else {
-    if (verbose > 0) cat("Seasonality diagnostics for ", name, ": M7 = ", this.stat$M[7], ", Q_M2 = ", this.stat$Q_M2, " (<1 is OK, >1 is not OK).\n", sep = "")
+    if (!is.null(plot.file)) grDevices::dev.off() else graphics::layout(matrix(1, ncol = 1))
   }
 
 
-  # In case there were missing values, put the regression-based prediction
-  x.pred <- this.ser
-  if (length(miss.inds) > 0) x.pred[miss.inds] <- predict.seas(best.mod)[miss.inds]
-  # Creating the forecast series in any case
-  x.bc <- if (nbcast > 0) seasonal::series(best.mod, "bct") else NULL
-  x.fc <- if (nfcast > 0) seasonal::series(best.mod, "fct") else NULL
-  # Prepending backcasts, appending forecasts
-  x.bf <- if (nbcast > 0) stats::ts(c(x.bc[, "backcast"], x.pred), end = stats::end(x.pred), freq = freq) else x.pred
-  x.bf <- if (nfcast > 0) stats::ts(c(x.bf, x.fc[, "forecast"]), start = stats::start(x.bf), freq = freq) else x.bf
-
-  if (this.stat$M[7] <= m7.threshold) { # There is seasonality
-    if (this.stat$Q_M2 <= q.threshold) {
-      if (verbose > 0) cat("There seem to be no immediate seasonality identifiability and adjustability problems in ", name, ".\n", sep = "")
-    } else {
-      if (verbose > 0) cat("The series ", name, " have some seasonality, but the adjustment quality is mediocre (or the trend is flat, which is harmless). Use with caution!\n", sep = "")
-    }
-
-    x.sa <- best.mod$series$d11
-    x.seas <- best.mod$series$d16 # Not D10 because there might be calendar effects as well
-    out.ts <- stats::ts.union(original = x, seasonal = x.seas, adjusted = x.sa, predicted = x.bf, trend = best.mod$series$d12, irregular = best.mod$series$d13)
-    out.date <- ts2date(out.ts)
-
-    ret <- list(seasonality = TRUE, multiplicative = this.stat$log, quality = this.stat, series = out.ts, seas = best.mod, date = out.date)
-  } else {
-    if (this.stat$Q_M2 > q.threshold) {
-      if (verbose > 0) cat("The series ", name, " do not have stable seasonality and are very noisy, skipping.\n", sep = "")
-    } else {
-      if (verbose > 0) cat("The series ", name, " do not have stable seasonality and seem regular, skipping.\n", sep = "")
-    }
-
-    x.sa <- x # No adjustment is done
-    x.seas <- if (this.stat$log) rep(1, length(x)) else rep(0, length(x))
-    out.ts <- stats::ts.union(original = x, seasonal = x.seas, adjusted = x.sa, predicted = x.bf, trend = best.mod$series$d12, irregular = x - best.mod$series$d12)
-    # Restoring the middle missing values in the adjusted series
-    mg <- findMiddleGaps(out.ts[, "adjusted"])
-    if (length(mg) > 0) out.ts[mg, "adjusted"] <- out.ts[mg, "predicted"]
-    out.date <- ts2date(out.ts)
-    ret <- list(seasonality = FALSE, multiplicative = NA, quality = this.stat, series = out.ts, seas = best.mod, date = out.date)
-  }
-
-  # Penultimate: some simple seasonality tests
-  # Not even filtering out the trend
-  # The Kruskal--Wallis and Friendman are non-robust
-  # We run two simple linear regressions and test joint significance
-  # 1: Regress the (S+I) on seasonal dummies (robust to outliers + robust ANOVA)
-  # 2: Regress the (S+I) onto the years and periods; test if something changes in years
-  si <- if (this.stat$log) best.mod$series$d10 * best.mod$series$d13 else best.mod$series$d10 + best.mod$series$d13
-  vHAC <- function(x) tryCatch(sandwich::kernHAC(x, prewhite = 0, kernel = "Bartlett", bw = sandwich::bwNeweyWest), error = function(e) sandwich::vcovHC(x, type = "HC0"))
-  vHC <- function(x) tryCatch(sandwich::vcovHC(x, type = "HC0"))
-  lm.seas <- tryCatch(MASS::rlm(si ~ factor(stats::cycle(si)), maxit = 100), error = efv)
-  if (is.null(lm.seas)) lm.seas <- stats::lm(rank(si) ~ factor(stats::cycle(si)))
-
-  test.seas <- tryCatch(car::linearHypothesis(lm.seas, names(stats::coef(lm.seas))[-1], vcov. = vHAC), error = efv)
-  if (is.null(test.seas)) test.seas <- tryCatch(car::linearHypothesis(lm.seas, names(stats::coef(lm.seas))[-1], vcov. = vHC), error = efv)
-  if (is.null(test.seas)) test.seas <- tryCatch(car::linearHypothesis(lm.seas, names(stats::coef(lm.seas))[-1]), error = function(e) return("Hypothesis testing failed."))
-  attr(test.seas, "heading") <- c("Seasonalily model: R_ij = a_i + U_ij", "(HAC-robust ANOVA for seasonal dummies in a robust regression)", attr(test.seas, "heading"))
-  si.year <- myYear(si)
-  lm.stab.seas <- tryCatch(MASS::rlm(si ~ factor(stats::cycle(si)) + factor(si.year), maxit = 100), error = efv)
-  if (is.null(lm.stab.seas)) lm.stab.seas <- stats::lm(si ~ factor(stats::cycle(si)) + factor(si.year))
-  hyp.stab <- names(stats::coef(lm.stab.seas))[grep("factor\\(si.year\\)", names(stats::coef(lm.stab.seas)))]
-  test.stab.seas <- tryCatch(car::linearHypothesis(lm.stab.seas, hyp.stab, vcov. = vHAC), error = efv)
-  if (is.null(test.stab.seas)) test.stab.seas <- tryCatch(car::linearHypothesis(lm.stab.seas, hyp.stab, vcov. = vHC), error = efv)
-  if (is.null(test.stab.seas)) test.stab.seas <- tryCatch(car::linearHypothesis(lm.stab.seas, hyp.stab), error = function(e) return("Hypothesis testing failed."))
-  attr(test.stab.seas, "heading") <- c("Evolutive seasonalily model: Y_ij = a_i + b_j + U_ij", "(HAC-robust ANOVA in the spirit of Higgins (1975))", attr(test.stab.seas, "heading"))
-  # For the Friedman test, we take full years
-  # friedman.mat <- matrix(as.numeric(tail(this.ser, floor(length(this.ser) / freq)*freq)), ncol = freq, byrow = TRUE)
-  # ft <- friedman.test(friedman.mat)
-  robust.m7 <- sqrt((1.5*test.stab.seas$F[2] + 3.5) / test.seas$F[2])
-  ret$si.seasonality.tests <- list(identifiable = test.seas, stable = test.stab.seas, robust.m7 = robust.m7)
+  ret <- list(seasonality = seasonality, multiplicative = multiplicative,
+              quality = this.stat, series = out.ts, seas = best.mod, date = ts2date(out.ts))
+  ret$si.robtests <- list(identifiable = test.seas, stable = test.stab.seas, robust.m7 = robust.m7)
 
   # Last check: positivity
   if (all(stats::na.omit(as.numeric(x)) > 0)) { # The original data are positive
@@ -749,7 +835,7 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
     } else {
       if (verbose > 0) cat("! The adjusted series contain some negative values, range", range(x.sa, na.rm = TRUE), "\n! Enforcing a log transformation may be necessary.\n")
     }
-    if (trans.fun != "log" & verbose > 1) cat("! All the values are positive, yet the model is additive.\n! Consider 'force.multiplicative = TRUE' and see if a multiplicative model is better.\n")
+    if (trans.fun != "log" & verbose > 1) cat("! All the values are positive, yet the model is additive.\n! Consider 'force.multiplicative = TRUE' and compare with a multiplicative model.\n")
   }
   if (verbose > 1) printSym("=", linelen)
   if (verbose > 0) cat("\n")
@@ -767,7 +853,7 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
 #'
 #' @examples
 #' tryCatch(getCalendars("France"), error = function(e) print("Calendar not found."))
-getCalendars <- function(country = "Luxembourg", path = NULL) {
+getCalendars <- function(country = "Luxembourg", suffix = "lu", path = NULL) {
   if (is.null(path)) path <- "S:/Projets/Modelisation/Mod\u00E8les/Seasonal Adjustment/calendars/"
   if (!(substr(path, nchar(path), nchar(path)) %in% c("/", "\\"))) stop("The 'path' argument should end with / or \\.")
   cal.q <- utils::read.csv(paste0(path, country, "-Q.csv"))
@@ -776,8 +862,8 @@ getCalendars <- function(country = "Luxembourg", path = NULL) {
   cal.m$Date <- as.Date(cal.m$Date, format = "%d/%m/%Y")
   cal.q <- suppressMessages(makeTS(cal.q))
   cal.m <- suppressMessages(makeTS(cal.m))
-  assign("cal.q", cal.q, envir = .GlobalEnv)
-  assign("cal.m", cal.m, envir = .GlobalEnv)
+  assign(paste0("cal.", suffix, ".q"), cal.q, envir = .GlobalEnv)
+  assign(paste0("cal.", suffix, ".m"), cal.m, envir = .GlobalEnv)
   print("Loaded the quartely and monthly calendars into the global environment as cal.q and cal.m.")
   return(invisible(NULL))
 }
@@ -789,8 +875,8 @@ getCalendars <- function(country = "Luxembourg", path = NULL) {
 # If given a numeric vector of length 5 (7 for imputePanel7), return the weighted mean of sorted forecasts (inconsistent weighting may occur).
 # c(1, 3, 5, 3, 1) is robust; c(0, 1, 2, 1, 0) is very robust; c(0, 0, 1, 0, 0) is the median.
 #' @param calendar Passed to diagnoseSeasonality().
-#' @param sample.begin Passed to diagnoseSeasonality() (shrink the estimation sample).
-#' @param sample.end Passed to diagnoseSeasonality() (shrink the estimation sample).
+#' @param sample.begin Index (e.g. `c(2010, 1)`) to shrink the estimation sample if needed.
+#' @param sample.end Index (e.g. `c(2025, 4)`) to shrink the estimation sample if needed.
 #' @param name Passed to diagnoseSeasonality() (series name).
 #' @param force.positive # If TRUE, does not return negative values; replacing them with half of the minimal positive value.
 #' @param return.multi If TRUE, return the 5 series (7 for imputePanel7) without any processing
@@ -938,9 +1024,8 @@ imputeMTS5 <- function(x,
   }
   if ("mts" %in% class(x)) {
     if (parallel & cores > 1) {
-      fns <- as.character(utils::lsf.str(envir = .GlobalEnv))
       cl <- parallel::makeCluster(cores)
-      parallel::clusterExport(cl, fns) # Exporting global functions
+      parallel::clusterEvalQ(cl, library(StatecCMP))
       parallel::clusterExport(cl, c("x", "robust.weights", "calendar", "sample.begin", "sample.end", "force.positive"), envir = environment())
       y.out <- parallel::parLapplyLB(cl, X = 1:ncol(x), imputei)
       parallel::stopCluster(cl); rm(cl)
@@ -1053,7 +1138,7 @@ imputePanel7 <- function(x, trim = c(0.25, 0.25),
   # Assuming positivity
   y.sa <- do.call(stats::ts.union, lapply(seas.mods, function(x) x$series[, "adjusted"]))
   if (all(stats::na.omit(as.numeric(y.series)) > 0) | force.positive) {
-    y.seas <- do.call(stats::ts.union, lapply(seas.mods, function(x) x$series[, "seasonal"]))
+    y.seas <- do.call(stats::ts.union, lapply(seas.mods, function(x) x$series[, "adjfac"]))
     y.mult <- sapply(seas.mods, "[[", "multiplicative")
     y.sa[is.na(y.series)] <- NA # Restoring the middle gaps
     y.sa[y.sa <= 0] <- NA
@@ -1088,14 +1173,12 @@ imputePanel7 <- function(x, trim = c(0.25, 0.25),
         for (j in js) imp.pca[j, i] <- imp.pca[j-1, i] * exp(gr.pca[j, i])
       }
       if (do.any) {
-        if (isTRUE(y.mult[i]))  imp.pca[, i] <- imp.pca[, i] * y.seas[, i]
-        if (isFALSE(y.mult[i])) imp.pca[, i] <- imp.pca[, i] + y.seas[, i]
-        # If it is NA, there is no seasonality and no need to change anything
+        imp.pca[, i] <- if (y.mult[i]) imp.pca[, i] * y.seas[, i] else imp.pca[, i] + y.seas[, i]
       } else { # There is nothing to impute -- restore the original unadjusted
         imp.pca[, i] <- y.series[, i]
       }
     }
-  } else { # Not applying the correction
+  } else { # Not applying the correction, returning NA with TS attributes
     imp.pca <- y.sa
     imp.pca[1:nrow(imp.pca), 1:ncol(imp.pca)] <- NA
     warning("imputePanel7: some of the series contain negative values. Skipping growth-rate-based imputation via PCA.")
