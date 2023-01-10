@@ -1,8 +1,8 @@
 Package: StatecCMP
 Type: Package
 Title: Convenience Wrappers and Functions for Statec
-Version: 0.0.1
-Date: 2022-12-27
+Version: 0.0.2
+Date: 2023-01-10
 Authors@R: c(person(given=c("Andreï", "Victorovitch"), family="Kostyrka",
         role="aut", email="andrei.kostyrka@gmail.com"),
 		person(given="Michel", family="Kostyrka",

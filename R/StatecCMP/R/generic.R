@@ -7,6 +7,9 @@
 # Dates: 2022-01 -- 2023-02
 ###############################################################################
 
+.ef <- function(e) return(NULL) # For try-catching and debugging
+.efv <- function(e) {print(e); return(NULL)} # For try-catching and debugging
+
 #' Compute lagged series padded with NA
 #'
 #' @param x A numeric vector, matrix or data frame
@@ -175,6 +178,7 @@ makeTS <- function(data, time.regex = "^Date|^Time|^Code") {
   if (any(class(data) %in% c("tbl", "tbl_df"))) data <- as.data.frame(data)
   p <- grepl(time.regex, colnames(data), ignore.case = TRUE)
   if (!any(p)) stop("No 'Date' or 'Time' column!") else p <- which(p) # Getting the index
+  if ("POSIXct" %in% class(data[, p])) data[, p] <- as.Date(data[, p])
   if ("Date" %in% class(data[, p])) {
     ind <- data[, p]
   } else if (is.character(data[, p]) | is.factor(data[, p])) { # The date was read as a character
@@ -462,11 +466,12 @@ createDistinctCols <- function(n = 4, nsamp = 200,
     # print(rbind(Current = x[best.inds[i], ], apply(x[new.bad, ], 2, range), Furthest = x[best.inds[i+1], ]))
   }
   bad.lens <- sapply(bad.list[-n], length)
-  bad.loss <- cumsum(bad.lens) / nsamp
+  bad.loss <- c(0, cumsum(bad.lens) / nsamp)
   res <- x.rgb[best.inds, ]
 
   fin <- grDevices::rgb(res[, 1], res[, 2], res[, 3])
-  if (plot) plot(2:n, bad.loss, pch = 16, cex = 2, col = fin, bty = "n", main = "Colour space shrinkage in colour picking", sub = "Last point close to 1 = the points are spaced out evenly", xlab = "Colours", ylab = "Remaining % of points")
+  if (plot) plot(1:n, bad.loss, pch = 16, cex = 2, col = fin, bty = "n", xlab = "Colours", ylab = "Remaining % of points",
+                 main = "Colour space shrinkage in colour picking", sub = "Last point close to 1 = the points are spaced out evenly")
   if (plot) graphics::abline(h = c(0, 1), lty = 2)
   return(fin)
 }

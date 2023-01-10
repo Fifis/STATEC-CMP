@@ -2,20 +2,44 @@
 % Please edit documentation in R/sa.R
 \name{getStat}
 \alias{getStat}
+\alias{getStatOne}
 \title{Get the crucial seasonal adjustment statistics}
 \usage{
-getStat(x)
+getStat(x, skip.robustM7 = FALSE)
+
+getStatOne(x, skip.robustM7 = FALSE)
 }
 \arguments{
-\item{x}{An object of class seasonal::seas.}
+\item{x}{An object of class [seasonal::seas], or a list of outputs from
+[seasonal::seas] or [diagnoseSeasonality()].}
+
+\item{skip.robustM7}{If TRUE, does not test the significance of seasonal abd
+year dummies with a consistent VCOV matrix. Saves 0.1 seconds in most cases
+
+`getStat()` can be applied to a [seasonal::seas] object or to the output of
+[diagnoseSeasonality()] regardless of the number of models / classes.
+If an adjustment is blended from multiple models, `getStat()` also computes the revision
+stability in the overlapping portions.
+
+`getStatOne()` is a low-level function for one single [seasonal::seas] object.}
 }
 \value{
-A list with named values.
+A data frame with named values that are the most important for diagnostics
+and archiving.
 }
 \description{
 Get the crucial seasonal adjustment statistics
 }
 \examples{
-xs <- seasonal::seas(datasets::AirPassengers, x11 = "")
-getStat(xs)
+xs1 <- seasonal::seas(AirPassengers, x11 = "")
+getStat(xs1)
+getStatOne(xs1)
+xs2 <- diagnoseSeasonality(AirPassengers, name = "AirlinePass", verbose = 1)
+getStat(xs2) # This one has a name
+# A list of multiple models, possibly mixed, coming from seas or diagnoseSeasonality
+xs3 <- diagnoseSeasonality(AirPassengers, td = 1, leap.year = FALSE, verbose = 1)
+set.seed(1)
+xs4 <- diagnoseSeasonality(ts(rnorm(120), start = c(1970, 1), freq = 12),
+         td = 1, max.length = 7, name = "WhiteNoise")
+getStat(list(xs1, xs2, xs3, xs4))
 }

@@ -9,6 +9,9 @@ getCalendars(country = "Luxembourg", suffix = "lu", path = NULL)
 \arguments{
 \item{country}{Character: file name (without the "-Q.csv") prefix}
 
+\item{suffix}{Character: the extra string inserted in the name to distinguish
+calendars: the output will be saved as `cal.SUFFIX.m` and `cal.SUFFIX.q`}
+
 \item{path}{Character: full directory path to use (ending with a slash).}
 }
 \value{
