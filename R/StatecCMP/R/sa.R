@@ -2285,12 +2285,13 @@ imputePanel7 <- function(x, trim = c(0.25, 0.25),
 }
 
 # TODO: diagSeas: return (as diagnostics) the AICcS for log-transform and TD
-# TODO: Return udg aictest.diff.Leap Year, aictest.diff.e
+# TODO: Return udg aictest.diff.Leap Year, aictest.diff.e (+ print in verbose = 1)
 # TODO: allow character calendar instead of matrices
 # TODO: create a data set for calendar and package it
 # TODO: plotSeas: if one model is MULT and another is ADD, plot differently (recompute the mult.)
 # TODO: write a function that would SA the series in parallel
 # TODO: with mts, plot to different files
+# TODO: with mts, try-catch and report what went wrong
 # TODO: diagnose robust M7 with all the series; there was a failure to invert something
 # TODO: add positivity/negativity of adj. check for archival
 # TODO: add QS, Shapiro-Wilk
@@ -2300,3 +2301,22 @@ imputePanel7 <- function(x, trim = c(0.25, 0.25),
 # TODO: example with outlier and missed level shift
 # TODO: example with a constant, example with a chaotic series
 # TODO: show estimation samples as brackets in plots
+# TODO: example of Gabriel, outlier regressors used in testing: why is 2021.2 skipped?
+# TODO: example with custom chunks ending with c(NA, NA) lookup to take whatever the last date is
+# TODO: test case: "S:/Projets/Conjoncture EPR/SEAS_ADJ/3_Branches/Secteur financier/Nouveaux crédits_cvs.xls"
+
+# u <- a.sel$udg
+# u[grep("q", names(u))]
+# s <- seasonal::qs(x)
+# r <- psp95lu$seas$series$rsd
+# m  <- lm(r ~ myLag(r) + myLag(r, 2))
+# summary(m)
+# q2 <- tryCatch(lmtest::waldtest(m, vcov = .vHAC), error = function(e) {
+#   print(e)
+#   lmtest::waldtest(m)
+# })
+# q2$`Pr(>F)`[2]
+# u[grep("spec", names(u))]
+# u[grep("peak", names(u))]
+# u[1:20 + 180]
+# s[c("qsrsd", "qsorievadj", "qssadjevadj", "qsirrevadj"), "p-val"]
