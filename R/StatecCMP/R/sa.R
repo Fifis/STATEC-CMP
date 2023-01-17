@@ -1754,13 +1754,14 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
 
   # If there are multiple time series, process them in parallel
   if ("mts" %in% class(x)) {
-    x.list <- lapply(1:ncol(x), function(i) x[, i])
+    k <- ncol(x)
+    x.list <- lapply(1:k, function(i) x[, i])
     x.names <- colnames(x)
     if (is.null(x.names)) x.names <- paste0("Column", 1:ncol(x))
 
     # TODO: Do the cluster stuff
     # TODO: output to multiple files or increment the number
-    ret <- lapply(x.list, function(i) diagSeasChunks(x.list[[i]], name = x.names[i],
+    ret <- lapply(1:k, function(i) diagSeasChunks(x.list[[i]], name = x.names[i],
                             est.begin = est.begin, est.end = est.end, bcast.begin = bcast.begin, fcast.end = fcast.end,
                             bfcast.tails = bfcast.tails, plot.file = plot.file))
   } else { # x is 1-dimensional
@@ -2289,6 +2290,7 @@ imputePanel7 <- function(x, trim = c(0.25, 0.25),
 # TODO: create a data set for calendar and package it
 # TODO: plotSeas: if one model is MULT and another is ADD, plot differently (recompute the mult.)
 # TODO: write a function that would SA the series in parallel
+# TODO: with mts, plot to different files
 # TODO: diagnose robust M7 with all the series; there was a failure to invert something
 # TODO: add positivity/negativity of adj. check for archival
 # TODO: add QS, Shapiro-Wilk
