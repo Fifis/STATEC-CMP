@@ -4,7 +4,7 @@
 # Author: Andrei V. Kostyrka
 # Entity: Statec
 # Date: 2022-01 -- 2022-12
-################################################################################
+########################################diagnoseSeasonality########################################
 
 #' Get the crucial seasonal adjustment statistics
 #'
@@ -13,12 +13,12 @@
 #' @param skip.robustM7 If TRUE, does not test the significance of seasonal abd
 #' year dummies with a consistent VCOV matrix. Saves 0.1 seconds in most cases
 #'
-#' `getStat()` can be applied to a [seasonal::seas] object or to the output of
+#' `getSAStat()` can be applied to a [seasonal::seas] object or to the output of
 #' [diagnoseSeasonality()] regardless of the number of models / classes.
-#' If an adjustment is blended from multiple models, `getStat()` also computes the revision
+#' If an adjustment is blended from multiple models, `getSAStat()` also computes the revision
 #' stability in the overlapping portions.
 #'
-#' `getStatOne()` is a low-level function for one single [seasonal::seas] object.
+#' `getSAStatOne()` is a low-level function for one single [seasonal::seas] object.
 #'
 #'
 #' @return A data frame with named values that are the most important for diagnostics
@@ -27,17 +27,17 @@
 #'
 #' @examples
 #' xs1 <- seasonal::seas(AirPassengers, x11 = "")
-#' getStat(xs1)
-#' getStatOne(xs1)
+#' getSAStat(xs1)
+#' getSAStatOne(xs1)
 #' xs2 <- diagnoseSeasonality(AirPassengers, name = "AirlinePass", verbose = 1)
-#' getStat(xs2) # This one has a name
+#' getSAStat(xs2) # This one has a name
 #' # A list of multiple models, possibly mixed, coming from seas or diagnoseSeasonality
 #' xs3 <- diagnoseSeasonality(AirPassengers, td = 1, leap.year = FALSE, verbose = 1)
 #' set.seed(1)
 #' xs4 <- diagnoseSeasonality(ts(rnorm(120), start = c(1970, 1), freq = 12),
 #'          td = 1, max.length = 7, name = "WhiteNoise")
-#' getStat(list(xs1, xs2, xs3, xs4))
-getStat <- function(x, skip.robustM7 = FALSE) {
+#' getSAStat(list(xs1, xs2, xs3, xs4))
+getSAStat <- function(x, skip.robustM7 = FALSE) {
   extrDS <- function(x) {
     if (isTRUE(attr(x, "type") == "diagnoseSeasonality")) {
       if (!is.null(x$spans)) { # Extracting all spans
@@ -57,21 +57,21 @@ getStat <- function(x, skip.robustM7 = FALSE) {
   x <- extrDS(x) # Extrcting if it is a single model
 
   if (class(x)[1] == "seas") {
-    return(getStatOne(x, skip.robustM7 = skip.robustM7))
+    return(getSAStatOne(x, skip.robustM7 = skip.robustM7))
   } else {
     # Could be one diagnoseSeasonality output or a list
     st <- lapply(x, function(x) {
       if (isTRUE(attr(x, "spans"))) {
-        do.call(rbind, lapply(x, getStatOne, skip.robustM7 = skip.robustM7))
-      } else getStatOne(x, skip.robustM7 = skip.robustM7)
+        do.call(rbind, lapply(x, getSAStatOne, skip.robustM7 = skip.robustM7))
+      } else getSAStatOne(x, skip.robustM7 = skip.robustM7)
     })
     st <- do.call(rbind, st)
     return(st)
   }
 }
 
-#' @rdname getStat
-getStatOne <- function(x, skip.robustM7 = FALSE) {
+#' @rdname getSAStat
+getSAStatOne <- function(x, skip.robustM7 = FALSE) {
   if (class(x)[1] != "seas") stop("The main argument must be a 'seas' object or the output of diagnoseSeasonality.")
 
   mna <- replicate(11, NA, simplify = FALSE)
@@ -79,13 +79,15 @@ getStatOne <- function(x, skip.robustM7 = FALSE) {
   sna <- replicate(8, NA, simplify = FALSE)
   names(sna) <- c("mean.rev", "mean.abs.rev", "mean.abs.pct.rev", "sd.rev", "rel.mean.abs.rev", "sd.rev.to.sd.sa", "spans", "overlap.nyears")
   sna$spans <- 1
-  sna$overlap.nyears <- -1
+  sna$overlap.nyears <- NA
   out <- c(list(name = "(noname)", start = NA, end = NA, freq = NA, n.obs = NA, n.ef.obs = NA,
                 custom.calendar = NA, log = NA, td = NA, easter = NA, leap.year = NA,
                 arima = NA, Noutlier = NA, N.AO = NA, N.LS = NA, N.TC = NA,
                 datesAO = "", datesLS = "", datesTC = "", AICc = NA, AICc.per.obs = NA),
-           mna, Q_M2 = NA, robust.M7 = NA,
-           sna) # Extra stability diagnostics for spans
+           mna, Q_M2 = NA, robust.M7 = NA, p.seas = NA, p.stab = NA,
+           sna, # Extra stability diagnostics for spans
+           has.seas = NA, has.calend = NA, seas.rule = NA, seas.value = NA, seas.thresh = NA,
+           log.rule = NA, td.rule = NA, easter.rule = NA, ly.rule = NA)
 
   f <- stats::frequency(x$x)
   first <- substr(as.character(ind2date(stats::start(x$x), f)), 1, 7)
@@ -110,7 +112,10 @@ getStatOne <- function(x, skip.robustM7 = FALSE) {
   m <- as.numeric(x$udg[paste0("f3.m", sprintf("%02d", 1:11))])
   names(m) <- paste0("M", 1:11)
   q <- as.numeric(x$udg["f3.qm2"])
-  rm7 <- if (!skip.robustM7) robustSeasTests(x)$robust.m7 else NA
+  rtest <- if (!skip.robustM7) robustSeasTests(x) else NULL
+  rm7 <- if (!skip.robustM7) rtest$robust.m7 else NA
+  p.seas <- if (!skip.robustM7) sprintf("%1.3f", rtest$pval["identifiable"]) else NA
+  p.stab <- if (!skip.robustM7) sprintf("%1.3f", rtest$pval["stable"]) else NA
 
   aicc <- as.numeric(x$udg["aicc"])
   n <- as.integer(x[["udg"]]["nobs"])
@@ -118,7 +123,7 @@ getStatOne <- function(x, skip.robustM7 = FALSE) {
   aiccn <- aicc / nef
 
   # Finding out if a custom calendar was used, and then, calendar regressors
-  custom.cal <- !is.null(x$model$regression$data)
+  custom.cal <- ("User-defined Trading Day" %in% x$est$reg$group) | isTRUE(attr(x, "custom.calendar"))
   which.ea <- grep("Easter", x$est$reg$group)
   has.easter <- if (length(which.ea) > 0) x$est$reg$group[which.ea] else "FALSE" # Keeping the value character
   has.ly <- "Leap Year" %in% x$est$reg$group
@@ -149,8 +154,24 @@ getStatOne <- function(x, skip.robustM7 = FALSE) {
   out[names(mna)] <- m
   out$Q_M2 <- q
   out$robust.M7 <- rm7
+  out$p.seas <- p.seas
+  out$p.stab <- p.stab
   if (!is.null(attr(x, "stability.inds"))) {
     out[names(sna)] <- attr(x, "stability.inds")
+  }
+  if (!is.null(attr(x, "seasonality"))) {
+    out$has.seas <- attr(x, "seasonality")["seasonal"]
+    out$has.calend <- attr(x, "seasonality")["calendar"]
+    out$seas.rule <- attr(x, "rule")
+    out$seas.value <- attr(x, "rule.value")
+    out$seas.thresh <- attr(x, "threshold")
+    out$log.rule <- attr(x, "transform")
+    out$td.rule <- attr(x, "td")
+    out$easter.rule <- attr(x, "easter")
+    out$ly.rule <- attr(x, "ly")
+  } else {
+    out$has.calend <- !isTRUE(all.equal(x$series$d16, x$series$d10)) # Is the seasonal adjustment the same as total?
+    out$seas.rule <- "X13"
   }
 
   out <- as.data.frame(out)
@@ -300,8 +321,8 @@ plotSeas <- function(x, name = NULL, sa.custom = NULL,
   std.adj <- is.null(sa.custom)
   if (!std.adj & length(sa.custom) != length(x$series$d11)) stop("'sa.custom' must have the same length as the adjusted series in x.")
 
-  s <- getStatOne(x, skip.robustM7 = skip.robustM7) # If (skip.robustM7), the time goes up by 0.2 s
-  if (is.null(name)) name <- s$name
+  s <- getSAStatOne(x, skip.robustM7 = skip.robustM7) # If (skip.robustM7), the time goes up by 0.2 s
+  if (is.null(name)) name <- s$name # If no name is given
   x.orig   <- x$x
   x.sa     <- if (!std.adj) sa.custom else x$series$d11
   x.adjfac <- x$series$d16 # Seasonal AND calendar effects
@@ -323,7 +344,8 @@ plotSeas <- function(x, name = NULL, sa.custom = NULL,
   xlim <- c(floor(xs[1]), ceiling(xs[2])) # Integer years on the x axis
   xs5 <- (ceiling(xlim[1]/5):floor(xlim[2]/5))*5 # Getting round year numbers divisible by 5
   mycols <- c(orig = "#27ba30", sa = "#000000EE", trend = "#0056ED", seas = "#FF8512", cal = "#377EB8BB")
-  lbcol <- "#FFFFFFCC" # Semi-transparent legend background
+  lbcol <- "#FFFFFFB2" # Semi-transparent legend background
+  lbxcol <- "#FFFFFF00" # Fully transparent legend box
   vxs <- setdiff(seq(round(xlim[1]), round(xlim[2])+1), xs5) # Secondary axis lines
   ylim <- range(x.sa, x.trend, x.orig, na.rm = TRUE)
   ylim <- ylim + c(-0.01, 0.01)*diff(ylim) # Extending slightly
@@ -338,10 +360,10 @@ plotSeas <- function(x, name = NULL, sa.custom = NULL,
   mdx <- stats::median(xfi)
   hdx <- mean(utils::head(xfi, f))
   tlx <- mean(utils::tail(xfi, f))
-  leg.pos.l <- if (hdx > mdx) "bottomleft" else "topleft"
-  leg.pos.r <- if (tlx > mdx) "bottomright" else "topright"
+  leg.pos.l <- if (isTRUE(hdx > mdx)) "bottomleft" else "topleft"
+  leg.pos.r <- if (isTRUE(tlx > mdx)) "bottomright" else "topright"
 
-  graphics::layout(matrix(c(1, 1, 2, 2, 3, 3, 4, 5), ncol = 2, nrow = 4, byrow = TRUE), heights = c(1.5, 1, 1, 1))
+  graphics::layout(matrix(c(1, 1, 2, 2, 3, 4, 5, 6), ncol = 2, nrow = 4, byrow = TRUE), heights = c(1.5, 1, 1, 1))
   # Plot 1: series and adjusted
   withr::local_par(mar = c(0.2, 2, 0.2, 1.2))
   plot(NULL, NULL, xlim = xlim, ylim = ylim, bty = "n", xaxt = "n")
@@ -365,9 +387,9 @@ plotSeas <- function(x, name = NULL, sa.custom = NULL,
   graphics::lines(x.trend - diff(ylim)*0.007, col = "#FFFFFFAA", lwd = 2, lty = 2)
   graphics::lines(x.trend, col = mycols["trend"], lwd = 2, lty = 2)
   graphics::legend(leg.pos.r, c("Original", "Adjusted", "Trend"), col = mycols[c("orig", "sa", "trend")],
-                   lwd = c(2, 3, 2), lty = c(1, 1, 2), bg = lbcol, box.col = lbcol)
-  graphics::legend("top", paste0("Seasonality adjustment for ", name), bg = lbcol, box.col = lbcol)
-  if (blended) graphics::legend(leg.pos.l, "Split blend borders", lty = 3, lwd = 1.5, col = "red", bg = lbcol, box.col = lbcol)
+                   lwd = c(2, 3, 2), lty = c(1, 1, 2), bg = lbcol, box.col = lbxcol)
+  graphics::legend("top", paste0("Seasonality adjustment for ", name), bg = lbcol, box.col = lbxcol)
+  if (blended) graphics::legend(leg.pos.l, "Split blend borders", lty = 3, lwd = 1.5, col = "red", bg = lbcol, box.col = lbxcol)
   graphics::points(x.orig, pch = as.numeric(sym.ts), col = "#FFFFFFEE", lwd = 5)
   graphics::points(x.orig, pch = as.numeric(sym.ts), col = "#FF0000", lwd = 2)
   # Labels at the proper side
@@ -377,6 +399,15 @@ plotSeas <- function(x, name = NULL, sa.custom = NULL,
                                pos = ifelse(is.below.trend[outl.pos], 3, 1), cex = 0.75, offset = 0.4, hscale = 0.003, vscale = 0.01, nhalo = 16)
 
   # Plot 2: only seasonality
+  # Find a less busy corner for the legend compared to the median
+  xfi <- x.seas.factual[is.finite(x.seas.factual)]
+  hdx <- utils::head(xfi, 3*f)
+  mdx <- (stats::median(xfi) + if (s$log) 1 else 0) / 2
+  hdl <- abs(stats::median(hdx[hdx < mdx]))
+  if (!isTRUE(is.finite(hdl))) hdl <- Inf # If nothing is in the corner, good
+  hdu <- abs(stats::median(hdx[hdx > mdx]))
+  if (!isTRUE(is.finite(hdu))) hdu <- Inf
+  leg.pos.l <- if (isTRUE(hdl > hdu)) "bottomleft" else "topleft"
   withr::local_par(mar = c(0.1, 2, 2, 1.2))
   ylim <- range(x.seas.factual, x.seas, x.cal, na.rm = TRUE)
   plot(NULL, NULL, bty = "n", xlim = xlim, ylim = ylim, xaxt = "n")
@@ -390,46 +421,93 @@ plotSeas <- function(x, name = NULL, sa.custom = NULL,
     graphics::lines(x.cal, col = "#FFFFFFBB", lwd = 4) # Calendar halo
     graphics::lines(x.cal, col = mycols["cal"], lwd = 2)
   }
-  graphics::legend("topright", if (s$log) "Multiplicative" else "Additive", bg = lbcol, box.col = lbcol)
+  graphics::legend("topright", if (s$log) "Multiplicative" else "Additive", bg = lbcol, box.col = lbxcol)
   leg.text <- if (std.adj) c("Seasonal", "Calendar") else c("Factual seas.", "X13 seas.", "Calendar")
 
   if (do.calend) {
     graphics::legend("bottomright", leg.text, ncol = 2 + !std.adj, col = c(mycols["seas"], if (std.adj) NULL else "#000000", mycols["cal"]),
-                     lwd = c(2.5, if (std.adj) NULL else 1, 2), lty = c(1, if (std.adj) NULL else 2, 1), bg = lbcol, box.col = lbcol)
+                     lwd = c(2.5, if (std.adj) NULL else 1, 2), lty = c(1, if (std.adj) NULL else 2, 1), bg = lbcol, box.col = lbxcol)
   } else { # Only seasonal
     leg.text <- setdiff(leg.text, "Calendar")
     graphics::legend("bottomright", leg.text, ncol = 1 + !std.adj, col = c(mycols["seas"], if (std.adj) NULL else "#000000"),
-                     lwd = c(2.5, if (std.adj) NULL else 1), lty = 1:2, bg = lbcol, box.col = lbcol)
+                     lwd = c(2.5, if (std.adj) NULL else 1), lty = 1:2, bg = lbcol, box.col = lbxcol)
   }
-  leg.text2 <- paste0(c("M7=", if (!skip.robustM7) "robM7=" else NULL, "Q2="), sprintf("%1.2f", c(s$M[7], if (!skip.robustM7) s$robust.M7 else NULL, s$Q_M2)))
-  graphics::legend("bottomleft", leg.text2, bg = lbcol, box.col = lbcol, ncol = 2 + (!skip.robustM7), text.width = NA)
+  leg.text2 <- paste0(c("M7=", if (!skip.robustM7) "robM7=" else NULL, "Q2="), sprintf("%1.2f", c(s$M7, if (!skip.robustM7) s$robust.M7 else NULL, s$Q_M2)))
+  graphics::legend(leg.pos.l, leg.text2, bg = lbcol, box.col = lbxcol, ncol = 2 + (!skip.robustM7), text.width = NA)
+  if (!skip.robustM7) {
+    leg.pos.l2 <- ifelse(leg.pos.l == "topleft", "bottomleft", "topleft")
+    graphics::legend(leg.pos.l2, paste0(c("pS=", "pM="), c(s$p.seas, s$p.stab)), cex = 0.75, bg = lbcol, box.col = lbxcol)
+  }
   axs <- xs5
   if (xlim[1] - min(xs5) > 1) axs <- c(min(axs)-5, axs) # Extending short axes
   if (xlim[2] - max(xs5) > 1) axs <- c(axs, max(axs)+5)
   graphics::axis(3, at = axs - 0.5/f, labels = axs)
 
-  # Plot 3: seasonal components
+  # Plot 3, 4: seasonal components
   withr::local_par(mar = c(2, 0.2, 0.2, 0.2))
   labs <- if (f == 4) paste0("Q", 1:4) else if (f == 12) month.abb else 1:f
   # The canvas is created in any case; the box plot lines can be hidden
   suppressWarnings(graphics::boxplot(x.orig ~ stats::cycle(x.orig), frame = FALSE, notch = TRUE, xlab = "", ylab = "", yaxt = "n",
-                                     col = "#00000000", border = if (!skip.boxplot) "#B5B9FF" else "#00000000", names = labs, pars = list(boxwex = 0.4, staplewex = 0.3, outwex = 0.3)))
+                                     col = "#00000000", border = if (!skip.boxplot) "#858ae6" else "#00000000", names = substr(labs, 1, 2), pars = list(boxwex = 0.4, staplewex = 0.3, outwex = 0.3)))
   graphics::abline(h = stats::median(x.orig, na.rm = TRUE), lty = 2)
   stats::monthplot(x.orig, box = FALSE, add = TRUE, lwd = 2)
+  graphics::legend("topleft", "Original", bg = lbcol, box.col = lbxcol)
+  suppressWarnings(graphics::boxplot(x.seas.factual ~ stats::cycle(x.seas.factual), frame = FALSE, notch = TRUE, xlab = "", ylab = "", yaxt = "n",
+                                     col = "#00000000", border = if (!skip.boxplot) "#858ae6" else "#00000000", names = substr(labs, 1, 2), pars = list(boxwex = 0.4, staplewex = 0.3, outwex = 0.3)))
+  graphics::abline(h = stats::median(x.seas.factual, na.rm = TRUE), lty = 2)
+  stats::monthplot(x.seas.factual, box = FALSE, add = TRUE, lwd = 2)
+  if (!std.adj) stats::monthplot(x.seas.factual, box = FALSE, add = TRUE, lty = 2, xaxt = "n", yaxt = "n", xlab = "", ylab = "")
+  graphics::legend("topleft", "Seasonal", bg = lbcol, box.col = lbxcol)
 
-  # Plot 4: spectra before and after adjustment
+  # Plots 5, 6: spectra before and after adjustment
   withr::local_par(mar = c(2, 0.2, 0.2, 0.2))
   computeSpectrum(x.orig, plot = TRUE, compact = TRUE)
   xspec <- computeSpectrum(x$series$d11, plot = TRUE, compact = TRUE, put.legend = FALSE)
-  graphics::legend(attr(xspec, "legend.position"), c("Left: original", "Right: forced SA"), bg = lbcol, box.col = lbcol)
+  graphics::legend(attr(xspec, "legend.position"), c("Left: original", "Right: forced SA"), bg = lbcol, box.col = lbxcol)
   graphics::layout(matrix(1, ncol = 1))
+}
+
+.vHAC <- function(x) { # Fail-safe HAC with rule of thumb
+  n <- length(x$residuals)
+  rot <- round(0.75*n^(1/3))
+  nw.lag <- tryCatch(sandwich::bwNeweyWest(x, prewhite = 0), error = function(e) {
+    ret <- rot
+    # warning("Too many dummies to proprely compute the HAC bw, using the rule-of-thumb.")
+    return(ret)
+  })
+  if (nw.lag > length(x$residuals)/4) {
+    # warning(paste0("The optimal Newey--West lag is too high (n=", n, ", lag=", round(nw.lag), "), using the rule-of-thumb (", rot, ")."))
+    nw.lag <- rot
+  }
+  ret <- tryCatch(sandwich::kernHAC(x, prewhite = 0, kernel = "Bartlett", bw = nw.lag), error = .efv)
+  if (is.null(ret)) ret <- .vHC(x)
+  attr(ret, "bandwidth") <- if (isTRUE(attr(nw.lag, "fail"))) NA else nw.lag
+  return(ret)
+}
+.vHC <- function(x) {
+  ret <- tryCatch(sandwich::vcovHC(x, type = "HC0"), error = .efv) # Fallback VCOV if vHAC fails
+  if (is.null(ret)) ret <- matrix(NA, nrow = length(x$coefficients), ncol = length(x$coefficients))
+  return(ret)
+}
+.tryTest <- function(x, what, robust = TRUE) {
+  failRet <- function(e) return(list("Hypothesis testing failed.", F = rep(NA, 2), `Pr(>F)` = rep(NA, 2)))
+  if (robust) {
+    vHA <- .vHAC(x)
+    ret <- tryCatch(car::linearHypothesis(x, what, vcov. = vHA), error = .ef)
+    # If it failed, either vHAC failed or vHA is not invertible
+    if (is.null(ret)) ret <- tryCatch(car::linearHypothesis(x, what, vcov. = .vHC), error = .ef)
+    if (is.null(ret)) ret <- tryCatch(car::linearHypothesis(x, what), error = failRet)
+    attr(ret, "bandwidth") <- attr(vHA, "bandwidth")
+  } else ret <- tryCatch(car::linearHypothesis(x, what), error = failRet)
+  if (is.null(attr(ret, "bandwidth"))) attr(ret, "bandwidth") <- NA
+  return(ret)
 }
 
 #' Robustified identifiable and stable seasonality tests for X13 M7
 #'
 #' @param x An object of class "seas" returned by [seasonal::seas]
-#' @param type Character: robust linear model (default), linear model, or
-#' rank regression.
+#' @param type Character: "rlm"for a robust linear model (default), "lm" for a linear model,
+#' "rank" for the rank regression, or "nonrobust" for the homoskedasticity-based ANOVA.
 #'
 #' This function provides a long-overdue improvement for the X13 ANOVA-based tests
 #' due to Higgins (1975)
@@ -471,33 +549,13 @@ plotSeas <- function(x, name = NULL, sa.custom = NULL,
 #' x2 <- window(x1, start = c(1949, 12), end = c(1960, 1)) # With singular years
 #' sa1 <- seasonal::seas(x1, x11 = "")
 #' sa2 <- diagnoseSeasonality(x2)
+#' # getStat(list(sa1, sa2))
 #' robustSeasTests(sa1)
 #' robustSeasTests(sa2$seas)
-robustSeasTests <- function(x, type = c("rlm", "lm", "rank")) {
+robustSeasTests <- function(x, type = c("rlm", "lm", "rank", "nonrobust")) {
   type <- type[1]
-  if ((!type %in% c("rlm", "lm", "rank"))) stop("'type' must be 'rlm', 'lm', or 'rank'.")
+  if ((!type %in% c("rlm", "lm", "rank", "nonrobust"))) stop("'type' must be 'rlm', 'lm', 'rank', or 'nonrobust'.")
   if (!("seas" %in% class(x))) stop("robustSeasTests takes a 'seasonal::seas' object as input.")
-
-  vHAC <- function(x) { # Fail-safe HAC with rule of thumb
-    nw.lag <- tryCatch(sandwich::bwNeweyWest(x, prewhite = 0), error = function(e) {
-      ret <- floor(0.75*length(x$residuals))
-      warning("Too many dummies to proprely compute the HAC bw, using the rule-of-thumb.")
-      return(ret)
-    })
-    ret <- sandwich::kernHAC(x, prewhite = 0, kernel = "Bartlett", bw = nw.lag)
-    attr(ret, "bandwidth") <- if (isTRUE(attr(nw.lag, "fail"))) NA else nw.lag
-    return(ret)
-  }
-  vHC <- function(x) sandwich::vcovHC(x, type = "HC0") # Fallback VCOV if vHAC fails
-  tryTest <- function(x, what) {
-    vHA <- vHAC(x)
-    ret <- tryCatch(car::linearHypothesis(x, what, vcov. = vHA), error = .ef)
-    if (is.null(ret)) ret <- tryCatch(car::linearHypothesis(x, what, vcov. = vHC), error = .ef)
-    if (is.null(ret)) ret <- tryCatch(car::linearHypothesis(x, what), error = function(e) return(list("Hypothesis testing failed.", F = rep(NA, 2))))
-    attr(ret, "bandwidth") <- attr(vHA, "bandwidth")
-    if (is.null(attr(ret, "bandwidth"))) attr(ret, "bandwidth") <- NA
-    return(ret)
-  }
 
   do.log <- isTRUE(seasonal::transformfunction(x) == "log")
   si <- if (do.log) x$series$d10 * x$series$d13 else x$series$d10 + x$series$d13
@@ -506,18 +564,25 @@ robustSeasTests <- function(x, type = c("rlm", "lm", "rank")) {
 
   lm.seas <- switch(type, rlm = tryCatch(MASS::rlm(si ~ cyc, maxit = 200), error = .ef),
                     lm = stats::lm(si ~ cyc),
-                    rank = stats::lm(rank(si) ~ cyc))
+                    rank = stats::lm(rank(si) ~ cyc),
+                    nonrobust = stats::lm(rank(si) ~ cyc))
+  if ("rlm" %in% class(lm.seas)) lm.seas <- stats::lm(stats::formula(lm.seas), data = stats::model.frame(lm.seas), weights = lm.seas$w) # Recasting to an identical lm
+  # This circumvents a bug in sandwich:::bread.rlm due to the zero derivative of Huber psi
   if (is.null(lm.seas)) lm.seas <- stats::lm(rank(si) ~ cyc)
   lm.stab <- switch(type, rlm = tryCatch(MASS::rlm(si ~ cyc + yr, maxit = 200), error = .ef),
                     lm = stats::lm(si ~ cyc + yr),
-                    rank = stats::lm(rank(si) ~ cyc + yr))
+                    rank = stats::lm(rank(si) ~ cyc + yr),
+                    nonrobust = stats::lm(rank(si) ~ cyc + yr))
+  if ("rlm" %in% class(lm.stab)) lm.stab <- stats::lm(stats::formula(lm.stab), data = stats::model.frame(lm.stab), weights = lm.stab$w)
   if (is.null(lm.stab)) lm.stab <- stats::lm(rank(si) ~ cyc + yr)
 
-  test.seas <- tryTest(lm.seas, names(stats::coef(lm.seas))[-1])
+  test.seas <- .tryTest(lm.seas, names(stats::coef(lm.seas))[-1], robust = (type != "nonrobust"))
   hyp.stab <- names(stats::coef(lm.stab))[grep("^yr", names(stats::coef(lm.stab)))]
-  test.stab <- tryTest(lm.stab, hyp.stab)
-  attr(test.seas, "heading") <- c("Seasonalily model: Y_ij = a_i + U_ij", "(HAC-robust ANOVA for seasonal dummies in a robust regression)", attr(test.seas, "heading"))
-  attr(test.stab, "heading") <- c("Evolutive seasonalily model: Y_ij = a_i + b_j + U_ij", "(HAC-robust ANOVA in the spirit of Higgins (1975))", attr(test.stab, "heading"))
+  test.stab <- .tryTest(lm.stab, hyp.stab, robust = (type != "nonrobust"))
+  attr(test.seas, "heading") <- c("Seasonalily model: Y_ij = a_i + U_ij", "(ANOVA for seasonal dummies)", attr(test.seas, "heading"))
+  attr(test.stab, "heading") <- c("Evolutive seasonalily model: Y_ij = a_i + b_j + U_ij", "(ANOVA in the spirit of Higgins (1975))", attr(test.stab, "heading"))
+
+  pval <- c(identifiable = test.seas$`Pr(>F)`[2], stable = test.stab$`Pr(>F)`[2])
 
   robust.m7 <- sqrt((1.5*test.stab$F[2] + 3.5) / test.seas$F[2])
   if (robust.m7 > 3) robust.m7 <- 3
@@ -526,7 +591,7 @@ robustSeasTests <- function(x, type = c("rlm", "lm", "rank")) {
   attr(bw, "kernel") <- "Bartlett"
   return(list(models = list(identifiable = lm.seas, stable = lm.stab),
               tests = list(identifiable = test.seas, stable = test.stab),
-              robust.m7 = robust.m7, HACbw = bw))
+              robust.m7 = robust.m7, pval = pval, HACbw = bw))
 }
 
 # .outlier2ind(c("ao2008.10", "tc2020.mar"))
@@ -554,7 +619,7 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
                                  easter = c("auto", "yes", "no"),
                                  forced.outliers = NULL,
                                  m7.threshold = 1,
-                                 m7.rule = c("robust", "original", "average", "force"),
+                                 sa.rule = c("robustM7", "M7", "averageM7", "yes", "no"),
                                  transform.aicdiff = -2, tradingdays.aicdiff = 0,
                                  plot.file = NULL, skip.boxplot = FALSE,
                                  verbose = 2
@@ -592,7 +657,7 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
   if (isFALSE(easter)) easter <- "no"
   if (!(easter %in% c("yes", "no", "auto"))) stop("'easter' must be 'yes', 'no', or 'auto'.")
 
-  m7.rule <- m7.rule[1]
+  sa.rule <- sa.rule[1]
 
   freq <- stats::frequency(x)
   if (!(freq %in% c(4, 12))) stop("The data are not monthly or quarterly, aborting.")
@@ -600,7 +665,7 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
     if (freq != stats::frequency(calendar)) stop("The frequency of the data is not equal to that of the calendar, aborting.")
     if (verbose > 1) cat("Using the user-supplied national calendar.\n")
   } else {
-    if (verbose > 1) cat("Using the default X13 calendar.\n")
+    warning("Using the default X13 Census calendar. Better supply a country-specific calendar.")
   }
 
   full.range <- getRangeVec(x)
@@ -679,7 +744,7 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
                           automdl.maxorder = c(2, 1), transform.function = "auto",
                           x11.appendfcst = do.fcast, forecast.maxlead = nfcast,
                           x11.appendbcst = do.bcast, forecast.maxback = nbcast,
-                          forecast.save = c("bct", "fct")), error = .efv)
+                          forecast.save = c("bct", "fct"), spectrum.savelog = "all"), error = .efv)
   flbk.msg <- "Even the basic auto-model could not be estimated. The series cannot be adjusted with X13.\nPlot the series -- most likely is it piecewise linear, although other irregularities are possible."
 
   ######################################################################
@@ -694,11 +759,42 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
                   regression.variables = transf.rv, regression.aictest = NULL,
                   xreg = transf.xreg, regression.usertype = transf.ut, # Depends on `td`
                   transform.function = tr, ####### The only manual argument
-                  automdl.maxorder = c(3, 1), estimate.tol = 1e-7,
+                  automdl.maxorder = c(3, 1), estimate.tol = 1e-7, estimate.maxiter = 5000,
                   x11.appendfcst = do.fcast, forecast.maxlead = nfcast,
                   x11.appendbcst = do.bcast, forecast.maxback = nbcast,
-                  forecast.save = c("bct", "fct")) # Default argument list
-    tryCatch(seasonal::seas(list = dlist), error = .efv)
+                  forecast.save = c("bct", "fct"), spectrum.savelog = "all") # Default argument list
+    ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    if (is.null(ret)) {
+      dlist$estimate.maxiter <- 20000
+      warning("Estimation did not converge -- increasing maxiter from 5,000 to 20,000.")
+      ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    }
+    if (is.null(ret)) {
+      dlist$estimate.tol <- 1e-6
+      warning("Estimation did not converge -- relaxing the tolerance from 1e-7 to 1e-6.")
+      ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    }
+    if (is.null(ret)) {
+      dlist$estimate.tol <- 1e-5
+      warning("Estimation did not converge -- relaxing the tolerance from 1e-6 to 1e-5.")
+      ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    }
+    if (is.null(ret)) {
+      dlist$estimate.tol <- 1e-4
+      warning("Estimation did not converge -- relaxing the tolerance from 1e-5 to 1e-4.")
+      ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    }
+    if (is.null(ret)) {
+      dlist$outlier.types = c("ao", "ls")
+      warning("Estimation did not converge -- disallowing auto-detection of TC outliers.")
+      ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    }
+    if (is.null(ret)) {
+      dlist$automdl.maxorder = c(2, 1)
+      warning("Estimation did not converge -- reducing the maximum order from (3 1) to (2 1).")
+      ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    }
+    return(ret)
   }
 
   trans.fun <- switch(transform, auto = "auto", yes = "log", no = "none")
@@ -721,7 +817,7 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
     if (verbose > 1) .printSeasAIC(a.td.nolog, msg.add)
 
     # Extracting the common outliers
-    extrOut <- function(x) tryCatch(tolower(seasonal::outlier(x)), error = function(e) {ret <- rep(NA, length(x)); attributes(ret) <- attributes(x); ret})
+    extrOut <- function(y) tryCatch(tolower(seasonal::outlier(y)), error = function(e) {ret <- rep(NA, length(x)); attributes(ret) <- attributes(x); ret})
     log.outlier.ts <- data.frame(log = extrOut(a.td.log), nolog = extrOut(a.td.nolog))
     log.outlier.ts.med <- lapply(1:nrow(log.outlier.ts), function(i) .OTMed2(as.matrix(log.outlier.ts)[i, ])) # Creating only one outlier per period
     log.outlier.ts.med.conc <- unlist(lapply(log.outlier.ts.med, attr, "concordant"))
@@ -796,13 +892,44 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
                   regression.variables = regvar, regression.aictest = aictest,
                   xreg = xreg, regression.usertype = usertype,
                   transform.function = trans.fun,
-                  automdl.maxorder = c(3, 1), estimate.tol = 1e-7,
+                  automdl.maxorder = c(3, 1), estimate.tol = 1e-7, estimate.maxiter = 5000,
                   x11.appendfcst = do.fcast, forecast.maxlead = nfcast,
                   x11.appendbcst = do.bcast, forecast.maxback = nbcast,
-                  forecast.save = c("bct", "fct")) # Default argument list
+                  forecast.save = c("bct", "fct"), spectrum.savelog = "all") # Default argument list
     if (is.null(usertype)) dlist$usertype <- NULL # Dropping the arguments
     if (is.null(xreg)) dlist$xreg <- NULL
-    tryCatch(seasonal::seas(list = dlist), error = .efv)
+    ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    if (is.null(ret)) {
+      dlist$estimate.maxiter <- 20000
+      warning("Estimation did not converge -- increasing maxiter from 5,000 to 20,000.")
+      ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    }
+    if (is.null(ret)) {
+      dlist$estimate.tol <- 1e-6
+      warning("Estimation did not converge -- relaxing the tolerance from 1e-7 to 1e-6.")
+      ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    }
+    if (is.null(ret)) {
+      dlist$estimate.tol <- 1e-5
+      warning("Estimation did not converge -- relaxing the tolerance from 1e-6 to 1e-5.")
+      ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    }
+    if (is.null(ret)) {
+      dlist$estimate.tol <- 1e-4
+      warning("Estimation did not converge -- relaxing the tolerance from 1e-5 to 1e-4.")
+      ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    }
+    if (is.null(ret)) {
+      dlist$outlier.types = c("ao", "ls")
+      warning("Estimation did not converge -- disallowing auto-detection of TC outliers.")
+      ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    }
+    if (is.null(ret)) {
+      dlist$automdl.maxorder = c(2, 1)
+      warning("Estimation did not converge -- reducing the maximum order from (3 1) to (2 1).")
+      ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    }
+    return(ret)
   }
   if (td == "auto") {
     # The previous step estimated a 6TD model--estimating the other two
@@ -812,7 +939,7 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
     a.nd <- estSeas2(regvar = nd.vars)
     if (verbose > 1) .printSeasAIC(a.nd, "-- Model: 0 TD")
 
-    extrOut <- function(x) tryCatch(tolower(seasonal::outlier(x)), error = function(e) {ret <- rep(NA, length(x)); attributes(ret) <- attributes(x); ret})
+    extrOut <- function(y) tryCatch(tolower(seasonal::outlier(y)), error = function(e) {ret <- rep(NA, length(x)); attributes(ret) <- attributes(x); ret})
     outlier.ts <- data.frame(td = extrOut(a.td), wd = extrOut(a.wd), nd = extrOut(a.nd))
     outlier.ts.med <- lapply(1:nrow(outlier.ts), function(i) .OTMed3(as.matrix(outlier.ts)[i, ])) # Creating only one outlier per period
     outlier.ts.med.conc <- unlist(lapply(outlier.ts.med, attr, "concordant"))
@@ -943,7 +1070,7 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
   if (verbose > 0) cat("*** Outlier regressors: ", paste0(sort(setdiff(a.sel$model$regression$variables, cal.names)), collapse = ", "), "\n", sep = "")
   if (verbose > 1) printSym("-", linelen)
 
-  stat <- getStatOne(a.sel)
+  stat <- getSAStatOne(a.sel)
 
   # Preparing the separate decomposed series
   x.sa <- a.sel$series$d11
@@ -979,9 +1106,9 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
   # 4 options: robust M7, original M7, average, or enforce the adjustment (assume M7=0)
   # Calendar adjustment will always be performed if RegARIMA detected it
   # If it was not detected, then, the adjusement factor is equal to just the seasonal component
-  seas.strength <- switch(m7.rule, robust = robust.m7, original = stat$M7, average = (robust.m7+stat$M7)/2, force = 0)
+  seas.strength <- switch(sa.rule, robustM7 = robust.m7, M7 = stat$M7, averageM7 = (robust.m7+stat$M7)/2, yes = -1, no = 4)
   seas.strength <- round(seas.strength, 3)
-  do.seasadj <- seas.strength <= m7.threshold
+  do.seasadj <- seas.strength < m7.threshold
   if (do.calend | do.seasadj) { # There is some seasonality
     if (verbose > 0) {
       if (verbose > 1) {
@@ -1000,7 +1127,6 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
       x.seas <- x; x.seas[1:length(x.seas)] <- as.numeric(stat$log) # Copying the TS attributes to a constant 1 or 0
       x.ir <- if (stat$log) x / x.cal / x.trend else x - x.cal - x.trend
     }
-    seasonality <- TRUE
     multiplicative <- stat$log
   } else {
     if (verbose > 1) {
@@ -1014,13 +1140,24 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
     x.seas <- x; x.seas[1:length(x.seas)] <- as.numeric(stat$log) # Copying the TS attributes
     x.cal <- x.adjfac <- x.seas
     x.ir <- if (stat$log) x / x.trend else x - x.trend
-    seasonality <- FALSE
     multiplicative <- FALSE
   }
+  seasonality <- c(seasonal = do.seasadj, calendar = do.calend)
+
+  # Adding the metadata to be extracted by getStat
+  attr(a.sel, "seasonality") <- seasonality
+  attr(seasonality, "rule") <- attr(a.sel, "rule") <- sa.rule
+  attr(seasonality, "rule.value") <- attr(a.sel, "rule.value") <- seas.strength
+  attr(seasonality, "threshold") <- attr(a.sel, "threshold") <- m7.threshold
+  attr(a.sel, "transform") <- transform
+  attr(a.sel, "td") <- td
+  attr(a.sel, "ly") <- leap.year
+  attr(a.sel, "easter") <- easter
+
 
   cat("*** Calendar eff.: ", if (do.calend) "YES (AICc)" else "NO (AICc)", ", seasonal eff.: ", if (do.seasadj) "YES" else "NO", " (",
-      switch(m7.rule, robust = "rob. M7 = ", original = "M7 = ", average = "avg. M7 = ", force = "forced"),
-      if (m7.rule != "force") paste0(seas.strength, if (do.seasadj) " <= " else " > ", m7.threshold) else "", ").\n", sep = "")
+      switch(sa.rule, robustM7 = "rob. M7 = ", M7 = "M7 = ", averageM7 = "avg. M7 = ", yes = "forced", no = "forbidden"),
+      if (!(sa.rule %in% c("yes", "no"))) paste0(seas.strength, if (do.seasadj) " <= " else " > ", m7.threshold) else "", ").\n", sep = "")
 
   out.ts <- stats::ts.union(original = x, adjusted = x.sa, adjfac = x.adjfac, seasonal = x.seas,
                             calendar = x.cal, trend = x.trend, irregular = x.ir, predicted = x.bf)
@@ -1035,7 +1172,7 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
   if (!isTRUE(is.na(plot.file))) {
     if (!is.null(plot.file)) grDevices::png(plot.file, 800, 900, type = "cairo", pointsize = 20)
     ext.xlim <- c(if (nbcast > 0) -nbcast/freq else 0, if (nfcast > 0) nfcast/freq else 0)
-    plotSeas(x = a.sel, sa.custom = x.sa, extend.xlim = ext.xlim, skip.boxplot = skip.boxplot)
+    plotSeas(x = a.sel, sa.custom = x.sa, name = name, extend.xlim = ext.xlim, skip.boxplot = skip.boxplot)
     if (!is.null(plot.file)) grDevices::dev.off()
   }
 
@@ -1043,7 +1180,7 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
   if (length(a.sel$series$rsd) != length(a.sel$series$d11)) {
     a.sel$series$rsd <- stats::window(a.sel$series$rsd, start = stats::start(a.sel$series$d11), end = stats::end(a.sel$series$d11), extend = TRUE)
   }
-  attr(seasonality, "identify") <- list(rule = m7.rule, threshold = m7.threshold, actual = seas.strength)
+  attr(seasonality, "identify") <- list(rule = sa.rule, threshold = m7.threshold, actual = seas.strength)
 
   ret <- list(seasonality = seasonality, multiplicative = multiplicative, quality = stat,
               series = out.ts, seas = a.sel, date = ts2date(out.ts), si.robtests = rob.tests)
@@ -1062,8 +1199,9 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
   if (verbose > 1) printSym("=", linelen)
   if (verbose > 0) cat("\n")
 
-  attr(ret, "type") <- "diagnoseSeasonality" # To be easily parsed by getStat
+  attr(ret, "type") <- "diagnoseSeasonality" # To be easily parsed by getSAStat
   attr(ret$seas, "seriesname") <- name
+  attr(ret$seas, "custom.calendar") <- (!is.null(calendar))
   return(ret)
 }
 
@@ -1116,11 +1254,21 @@ diagnoseRevisions <- function(old, new, nspans = NA, overlap.length = NA) {
 #' @param leap.year Character: automatic, forced, or no leap-year effect
 #' @param easter Character: automatic, forced, or no Easter effect
 #' @param forced.outliers A character vector of ourlier dates and types in X13 format (e.g. `c("ao2010.1", "tc2020.3")`)
-#' @param split.long If TRUE, long time series will be adjusted in chunks and then, blended together
-#' @param max.length Numeric: length of a chunk in years
+#' @param split.long If TRUE, long time series will be adjusted in chunks and then, blended together.
+#' Ignored if `custom.starts` is not `NULL`
+#' @param max.length Numeric: length of a chunk in years. Ignored if `split.long` is `FALSE` or if
+#' `custom.[est.starts, est.ends]` is not `NULL`.
 #' @param overlap.length Numeric: the end of one chunk will be blended with the beginning of another chunk over this number of years
+#' @param custom.est.starts A list of length-2 vectors, a data frame or a matrix with two columns:
+#' year and period denoting the starts of each chunk
+#' @param custom.est.ends A list of length-2 vectors, a data frame or a matrix with two columns:
+#' year and period denoting the ends of each chunk
+#' @param custom.blend.starts A list of length-2 vectors, a data frame or a matrix with two columns:
+#' year and period denoting the starts of blending periods between 2 estimation windows
+#' @param custom.blend.ends A list of length-2 vectors, a data frame or a matrix with two columns:
+#' year and period denoting the ends of blending periods between 2 estimation windows
 #' @param m7.threshold Numeric between 0 and 3: the procedure will produce SA series if the M7 statistic is less than this threshold. A value of 3 means that adjustment is always done.
-#' @param m7.rule Character: what kind of indicator compare to `m7.threshold`.
+#' @param sa.rule Character: what kind of indicator compare to `m7.threshold`.
 #' @param transform.aicdiff Numeric: the AICc difference between the additive (linear) and multiplicative (log) model; use log if AICc(nolog) - AICc(log) < aicdiff; by default, prefers multiplicative models
 #' @param tradingdays.aicdiff Numeric: the AICc difference for the TD or WD dummies to be added into the model (if negative, prefers more parsimonious models)
 #' @param plot.file A string containing the path to the output PNG file. If NULL, plot to the current device. Using NA prevents any plot from being created.
@@ -1246,7 +1394,7 @@ diagnoseRevisions <- function(old, new, nspans = NA, overlap.length = NA) {
 #'                            max.length = 15, overlap.length = 0)
 #' y25 <- diagnoseSeasonality(ylong3, transform = "no", easter = "no", leap.year = "no",
 #'                            max.length = 25, overlap.length = 1/12) # Only 1-point overlap
-#' getStat(list(y10, y15, y15n, y25))
+#' getSAStat(list(y10, y15, y15n, y25))
 #' plotSeas(y10)
 #' plotSeas(y15)
 #' plotSeas(y15n)
@@ -1271,6 +1419,22 @@ diagnoseRevisions <- function(old, new, nspans = NA, overlap.length = NA) {
 #'                bcast.begin = c(1982, 11), fcast.end = c(2000, 1), bfcast.tails = TRUE,
 #'                transform = "no", easter = "no", leap.year = "no")
 #' plotSeas(yshort.fc2)
+#'
+#' set.seed(1)
+#' x <- ts(rnorm(500), end = c(2022, 12), freq = 12)
+#' a <- diagnoseSeasonality(x, max.length = 15)
+#' # Custom breaks
+#' ce.st <- matrix(c(1981, 5, 1990, 1, 2005, 8, 2015, 2), ncol = 2, byrow = TRUE)
+#' ce.en <- matrix(c(1991, 1, 2007, 1, 2015, 1, 2022, 12), ncol = 2, byrow = TRUE)
+#' a2 <- diagnoseSeasonality(x, td = 0, transform = "no", leap.year = "no", easter = "no",
+#'                           custom.est.starts = ce.st, custom.est.ends = ce.en)
+#' # One break = supply the breaks as a list
+#' a3 <- diagnoseSeasonality(AirPassengers, transform = "yes", td = 1,
+#'                           custom.est.starts = list(c(1949, 1),  c(1953, 1)),
+#'                           custom.est.ends   = list(c(1957, 12), c(1960, 12)),
+#'                           custom.blend.starts = list(c(1953, 7)),
+#'                           custom.blend.ends   = list(c(1953, 12))
+#'                           )
 diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
                                 bfcast.tails = FALSE,
                                 est.begin = NULL, est.end = NULL,
@@ -1281,11 +1445,13 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
                                 easter = c("auto", "yes", "no"),
                                 forced.outliers = NULL,
                                 m7.threshold = 1,
-                                m7.rule = c("robust", "original", "average", "force"),
+                                sa.rule = c("robustM7", "M7", "averageM7", "yes", "no"),
                                 transform.aicdiff = -2, tradingdays.aicdiff = 0,
                                 plot.file = NULL, skip.boxplot = FALSE,
                                 verbose = 2,
                                 split.long = TRUE, max.length = 15, overlap.length = 1,
+                                custom.est.starts = NULL, custom.est.ends = NULL,
+                                custom.blend.starts = NULL, custom.blend.ends = NULL,
                                 parallel = FALSE, mc.cores = 4
 ) {
   # A wrapper for diagnoseSeasonalityOnewith all the input parameters passed down except for the sample-defining and plotting ones
@@ -1293,7 +1459,7 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
     diagnoseSeasonalityOne(x, calendar = calendar, name = name,
                          transform = transform, td = td, leap.year = leap.year, easter = easter,
                          forced.outliers = forced.outliers,
-                         m7.threshold = m7.threshold, m7.rule = m7.rule,
+                         m7.threshold = m7.threshold, sa.rule = sa.rule,
                          transform.aicdiff = transform.aicdiff, tradingdays.aicdiff = tradingdays.aicdiff,
                          plot.file = plot.file, skip.boxplot = skip.boxplot, verbose = verbose,
                          nfcast = nfcast, nbcast = nbcast)
@@ -1360,11 +1526,31 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
     nbcast <- round(head.years * f) # How many points are to be backcast at the beginning of the series
     nfcast <- round(tail.years * f) # How many points are to be forecast at the end of the series
 
-    # Split the series into spans if it is too long
+    # Split the series into spans if it is too long or if custom splits were requested
     nmax <- round(max.length * f)
     nlap <- round(overlap.length * f)
-    if (nt > nmax) {
-      chunks <- splitWithOverlaps(n = nt, k = nmax, l = nlap, plot = FALSE)
+    custom.splits <- (!is.null(custom.est.starts)) & (!is.null(custom.est.ends))
+
+    if (nt > nmax | custom.splits) {
+      if (custom.splits) { # Case 1: the user requested their own splits
+        vs <- c("custom.est.starts", "custom.est.ends", "custom.blend.starts", "custom.blend.ends")
+        for (v in vs) {
+          gv <- get(v)
+          if (is.data.frame(gv)) assign(v, as.matrix(gv)) # DF to matrices all at once
+          gv <- get(v)
+          if (is.matrix(gv)) assign(v, split(gv, 1:nrow(gv))) # Matrices to lists all at once
+        }
+        # Finding the indices of the corresponding dates in the series indices
+        findRow <- function(x) which(apply(x.inds, 1, function(y) all(x == y)))
+        ce.st <- sapply(custom.est.starts, findRow)
+        ce.en <- sapply(custom.est.ends, findRow)
+        cb.st <- if (is.null(custom.blend.starts)) NULL else sapply(custom.blend.starts, findRow)
+        cb.en <- if (is.null(custom.blend.ends)) NULL else sapply(custom.blend.ends, findRow)
+        chunks <- splitOverlapCustom(n = nt, est.starts = ce.st, est.ends = ce.en, blend.starts = cb.st, blend.ends = cb.en)
+      } else { # Case 2: the series are long -- cut them automatically
+        chunks <- splitOverlapFixed(n = nt, nmax = nmax, l = nlap, plot = FALSE)
+      }
+
       p <- ncol(chunks$chunks)
       ranges <- apply(chunks$chunks, 2, range, na.rm = TRUE)
       ix <- time2ind(x.trim)
@@ -1377,27 +1563,43 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
       par.list[[1]]$nbcast <- nbcast
       par.list[[p]]$nfcast <- nfcast
 
-      if (verbose > 1) printSym("#", linelen)
-      if (verbose > 1) cat("Diagnosing seasonality in ", name, " via with parameter auto-selection.\n", sep = "")
-      if (verbose > 1) cat("The series of ", round(nt/f, 1), " years are split every ", max.length, " years with ", round(overlap.length*f), "-point overlap.\n", sep = "")
+      if (verbose > 1) {
+        printSym("#", linelen)
+        cat("Diagnosing seasonality in ", name, " via with parameter auto-selection.\n", sep = "")
+        if (!custom.splits) cat("The series of ", round(nt/f, 1), " years are split every ", max.length, " years with ", round(overlap.length*f), "-point overlap.\n", sep = "") else
+          cat("The series of ", round(nt/f, 1), " years are split into user-defined chunks.\n", sep = "")
+      }
+
       res.list <- lapply(1:p, function(i) do.call(diagSeas, par.list[[i]]))
       # Restoring the names without chunks
       for (i in 1:p) attr(res.list[[i]]$seas, "seriesname") <- name
 
       nzw <- chunks$weights > 0
       nzranges <- apply(nzw, 2, function(x) range(which(x)))
-      # nzinds <- chunks$chunks; nzinds[!nzw] <- NA # Indices of non-zero weights
       # Overlap statistics if the overlap length is greater than 0
-      if (nlap > 0) {
-        old.inds <- cbind(sum(nzw[, 1]) - (nlap-1):0, if (p>2) matrix(rep(nmax - (nlap-1):0, p-2), ncol = p-2) else NULL, NA)
-        new.inds <- cbind(NA, matrix(rep(1:nlap, p-1), ncol = p-1))
-        old.sa <- sapply(1:p, function(i) res.list[[i]]$series[old.inds[, i], "adjusted"])
-        new.sa <- sapply(1:p, function(i) res.list[[i]]$series[new.inds[, i], "adjusted"])
-        old.sa <- as.numeric(stats::na.omit(as.vector(old.sa)))
-        new.sa <- as.numeric(stats::na.omit(as.vector(new.sa)))
+      # With custom chunks, overlaps <=> 0 < w < 1
+      nlap.total <- if (custom.splits) sum(chunks$weights > 0 & chunks$weights < 1) else nlap
+      if (nlap.total > 0) {
+        # The old weights are always decreasing; the new ones are increasing.
+        # The mixing cannot start from the 1st observation by construction (check in splitOverlapCustom) --> first FALSE
+        # The weight index is relative to the first observation of the estimation sample
+        getWI <- function(i, old = TRUE) {
+          cond1 <- chunks$weights[, i] > 0 & chunks$weights[, i] < 1
+          cond2 <- c(FALSE, if (old) diff(chunks$weights[, i]) < 0 else diff(chunks$weights[, i]) > 0)
+          inds <- which(cond1 & cond2)
+          first.obs <- which(!is.na(chunks$chunks[, i]))[1]
+          inds <- inds - first.obs + 1
+          return(inds)
+        }
+        old.inds <- lapply(1:p, getWI, old = TRUE)[-p] # The last sample should never have old indices (it is not blended with any new series)
+        new.inds <- lapply(1:p, getWI, old = FALSE)[-1] # The first sample is never blended at start
+        old.sa <- lapply(1:(p-1), function(i) if (length(old.inds[[i]]) > 0) res.list[[i]]$series[old.inds[[i]], "adjusted"] else NULL)
+        new.sa <- lapply(1:(p-1), function(i) if (length(new.inds[[i]]) > 0) res.list[[i+1]]$series[new.inds[[i]], "adjusted"] else NULL)
+        old.sa <- as.numeric(stats::na.omit(unlist(old.sa)))
+        new.sa <- as.numeric(stats::na.omit(unlist(new.sa)))
       } else old.sa <- new.sa <- NA
       stability.inds <- diagnoseRevisions(old.sa, new.sa, nspans = p, overlap.length = overlap.length)
-      attr(res.list[[p]]$seas, "stability.inds") <- stability.inds # Saving for extraction by getStat
+      attr(res.list[[p]]$seas, "stability.inds") <- stability.inds # Saving for extraction by getSAStat
       # TODO: internally, never plot; call seasPlot externally
 
       # Blending the series and the 'seas' internal series, too
@@ -1493,7 +1695,7 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
       out <- res.list[[p]] # Taking the last one as the base
       out$series <- blended.series
       out$spans <- res.list
-      out$combined.stats <- getStat(res.list)
+      out$combined.stats <- getSAStat(res.list)
       out$stability.inds <- stability.inds
 
       # Adding a spoofed "seas"-like for plotting for plotSeas
@@ -1528,13 +1730,14 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
       # The earlier ones will be overwritten by the latter ones if the dates are identical
       combX13$model$regression$variables <- combOL
       combX13$x <- blended.series[, "original"]
-      out$combinedX13 <- combX13 # The presence of this element is checked in plotSeas and getStat
+      out$combinedX13 <- combX13 # The presence of this element is checked in plotSeas and getSAStat
+      out$chunks <- chunks
 
       # Plotting if plot.file is not NA
       if (!isTRUE(is.na(plot.file))) {
         if (!is.null(plot.file)) grDevices::png(plot.file, 800, 900, type = "cairo", pointsize = 20)
         ext.xlim <- c(if (nbcast > 0) -nbcast/f else 0, if (nfcast > 0) nfcast/f else 0)
-        plotSeas(x = combX13, extend.xlim = ext.xlim, skip.boxplot = skip.boxplot)
+        plotSeas(x = out, extend.xlim = ext.xlim, skip.boxplot = skip.boxplot)
         if (!is.null(plot.file)) grDevices::dev.off()
       }
 
@@ -1573,32 +1776,62 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
 #' Compute indices and weights for sub-series with overlapping
 #'
 #' @param n Integer: length of the full series
-#' @param k Integer: chunk size
+#' @param nmax Integer: chunk size
 #' @param l Non-negative integer: overlap length; can be 0 for no overlap
+#' @param est.starts Integer vector of indices denoting the starts of each chunk; should start with 1
+#' @param est.ends Integer vector of indices denoting the ends of each chunk; should end with `n`
+#' Must have the same length as `est.starts`.
+#' @param blend.starts Integer vector of indices denoting the starts of blending periods between 2 estimation windows.
+#' Must be of length 1 shorter than est.starts (because `k` chunks = `k-1` cuts between them), must start at 2 or later.
+#' Must not be less that the corresponding element of `est.starts` (excluding the 1st
+#' element): one cannot blend something with nothing; blending must occur within the overlap between the estimations.
+#' @param blend.ends Integer vector of indices denoting the ends of blending periods between 2 estimation windows.
+#' Must be of length 1 shorter than est.ends, must end at `n-1` or earlier.
+#' Must not be greater that the corresponding element of `est.ends` (excluding the last element).
 #' @param plot If `TRUE`, visualises the weight matrix and the sub-samples
 #'
 #' When a time series is estimated in chunks, the final results should be
 #' merged with ts.union. Then, they can be simply multipled by the weights
 #' and added by row.
 #'
-#' @return A list of two matrices: subsample indices by columns (with `NA`s for
+#' @return A list of two matrices: sub-sample indices by columns (with `NA`s for
 #' unused indices) and weights for blending.
 #' @export
 #'
 #' @examples
-#' splitWithOverlaps(n = 43, k = 20, l = 4, plot = TRUE)
-splitWithOverlaps <- function(n, k, l, plot = FALSE) {
-  # l =
-  if (n <= k) stop("The chunk length must be less than the sample size.")
-  if (k < 2*l) stop("The chunk length must greater than 2*overlap.length.")
-  n1 <- k - l # Non-overlapping points in a chunk
-  p <- 1 + ceiling((n-k) / n1) # Last + how many non-overlapping ones
+#' splitOverlapFixed(n = 43, nmax = 20, l = 4, plot = TRUE)
+#' # Custom: estimate on 5 and 7 years, blend in between
+#' splitOverlapCustom(n = 96, est.starts = c(1, 13), est.ends = c(60, 96), plot = TRUE)
+#' # Custom: estimate on years 1-5 and 2-7 years, but blend during the year 3
+#' splitOverlapCustom(n = 96, est.starts = c(1, 13), est.ends = c(60, 96),
+#'                    blend.starts = 25, blend.ends = 36, plot = TRUE)
+#' splitOverlapCustom(n = 150, est.starts = c(NA, 45, 90), est.ends = c(50, 100, 150), plot = TRUE)
+#' splitOverlapCustom(n = 200, est.starts = c(1, 15, 90, 140), est.ends = c(50, 100, 139, NA),
+#'                   blend.starts = c(15, 90, NA), blend.ends = c(27, 100, NA), plot = TRUE)
+#' # The ends can be trimmed
+#' splitOverlapCustom(n = 200, est.starts = c(8, 15, 90, 140), est.ends = c(50, 100, 139, 190),
+#'                   blend.starts = c(15, 90, NA), blend.ends = c(27, 100, NA), plot = TRUE)
+#' # If there is anything wrong with the indices, it will throw a meaningflu error
+#' \dontrun{
+#' # Does not work: gap in the middle
+#' splitOverlapCustom(n = 100, est.starts = c(1, 51), est.ends = c(49, 100), plot = TRUE)
+#' # Works: no gap in the middle
+#' splitOverlapCustom(n = 100, est.starts = c(1, 51), est.ends = c(50, 100), plot = TRUE)
+#' # Does not work because the blending window must be within the estimation sample overlap
+#' splitOverlapCustom(n = 150, est.starts = c(NA, 45, 90), est.ends = c(50, 100, NA),
+#'                    blend.starts = c(44, 89), blend.ends = c(51, 101), plot = TRUE)
+#' }
+splitOverlapFixed <- function(n, nmax, l, plot = FALSE) {
+  if (n <= nmax) stop("The chunk length must be less than the sample size.")
+  if (nmax < 2*l) stop("The chunk length must greater than 2*overlap.length.")
+  n1 <- nmax - l # Non-overlapping points in a chunk
+  p <- 1 + ceiling((n-nmax) / n1) # Last + how many non-overlapping ones
   chunks <- matrix(rep(1:n, p), ncol = p)
   mults <- matrix(0, nrow = n, ncol = p)
   # Chunks = indices of subsamples, mults = weights for linear blending
-  chunks[1:(n-k), p] <- NA
+  chunks[1:(n-nmax), p] <- NA
   blend.w <- if (l > 0) (1:l)/(l+1) else NULL
-  full.w <- c(blend.w, rep(1, k - 2*l), rev(blend.w)) # Mixing weights
+  full.w <- c(blend.w, rep(1, nmax - 2*l), rev(blend.w)) # Mixing weights
   wif <- which(is.finite(chunks[, p]))
   mults[wif, p] <- 1
   if (l > 0) mults[wif[1:l], p] <- blend.w # Non-zero mixing weights for the overlap period
@@ -1610,26 +1843,82 @@ splitWithOverlaps <- function(n, k, l, plot = FALSE) {
     }
   }
   # Final chunk: from the first observation; take only the part not covered by other periods + overlap
-  chunks[(k+1):n, 1] <- NA
+  chunks[(nmax+1):n, 1] <- NA
   last.used <- which(is.finite(chunks[, 1]) & is.na(chunks[, 2]))
   if (l > 0) last.used <- c(last.used, max(last.used) + 1:l)
-  first.w <- c(rep(1, k-l), rev(blend.w)) # Mixing weights
+  first.w <- c(rep(1, nmax-l), rev(blend.w)) # Mixing weights
   mults[last.used, 1] <- utils::tail(first.w, n = length(last.used))
 
   if (plot) {
     withr::local_par(mar = c(0.3, 0.3, 0.3, 0.3))
-    graphics::image(1:n, 1:p, mults, col = grDevices::gray.colors(40, start = 1, end = 0), xaxt = "n", yaxt = "n", bty = "n")
-    for (i in 1:p) {
-      hr <- range(chunks[, i], na.rm = TRUE)
-      graphics::rect(hr[1]-0.5, i-0.5, hr[2]+0.5, i + 0.5, border = 1, lty = 2)
-    }
+    .plotChunks(mults, chunks)
   }
   return(list(chunks = chunks, weights = mults))
 }
 
+#' @rdname splitOverlapFixed
+splitOverlapCustom <- function(n, est.starts, est.ends,
+                               blend.starts = NULL, blend.ends = NULL, plot = FALSE) {
+  p <- length(est.starts)
+  if (is.null(blend.starts)) blend.starts <- est.starts[-1]
+  if (is.null(blend.ends)) blend.ends <- est.ends[-p]
+  if (length(est.starts) != length(est.ends)) stop("splitOverlapCustom: 'est.starts' should have the same length as 'est.ends'.)")
+  if (length(blend.starts) != length(blend.ends)) stop("splitOverlapCustom: 'blend.starts' should have the same length as 'blend.ends'.)")
+  if (length(est.starts) - 1 != length(blend.ends)) stop("splitOverlapCustom: 'blend.starts' should have length 'length(est.starts) - 1'.)")
+  if (!is.finite(est.starts[1])) est.starts[1] <- 1
+  if (!is.finite(est.ends[p])) est.ends[p] <- n
+  if (max(est.ends) > n) stop("'est.ends' must come earlier than the end of the full sample.")
+  if (min(est.starts) < 1) stop("'est.starts' must come later than the start of the full sample.")
+  if (any((blend.starts < est.starts[-1]) & is.finite(blend.starts))) stop("Cannot start blending the series earlier than the estimation sample starts.")
+  if (any((blend.ends > est.ends[-p]) & is.finite(blend.ends))) stop("Cannot finish blending the series later than the estimation sample ends.")
+
+  for (i in 1:(p-1)) {
+    gap <- est.starts[i+1] - est.ends[i]
+    if (gap == 1) blend.starts[i] <- blend.ends[i] <- NA # No gap = no blending
+    if (gap > 1) stop("There is a gap between the requested estimation samples -- check the indices.")
+  }
+  # Chunks = indices of subsamples, mults = weights for linear blending
+  chunks <- matrix(NA, nrow = n, ncol = p)
+  for (i in 1:p) {
+    s <- seq(est.starts[i], est.ends[i])
+    chunks[s, i] <- s
+  }
+  mults <- matrix(NA, nrow = n, ncol = p)
+  lw <- lapply(1:(p-1), function(i) if (is.finite(blend.starts[i])) seq(blend.starts[i], blend.ends[i]) else NULL) # List of overlap periods
+  if (any(duplicated(unlist(lw)))) stop("Only 2 series can overlap at the same time.")
+  for (i in 1:(p-1)) { # Filling in the weights
+    if (length(lw[[i]] > 0)) { # If there is a non-zero gap
+      w <- seq_along(lw[[i]]); w <- w / (max(w) + 1)
+      mults[lw[[i]], i] <- rev(w)
+      mults[lw[[i]], i+1] <- w
+    }
+  }
+  # Filling the first column till the first positive weight, and the last after the last positive weight
+  if (length(lw[[1]]) > 0) mults[est.starts[1]:(min(lw[[1]])-1), 1] <- 1 else mults[is.finite(chunks[, i]), 1] <- 1
+  if (length(lw[[p-1]]) > 0) mults[(max(lw[[p-1]])+1):est.ends[p], p] <- 1 else mults[is.finite(chunks[, p]), p] <- 1
+  # Filling the remaining gaps with no values withing the blocks with 1
+  if (p > 2) {
+    for (i in 2:(p-1)) mults[is.finite(chunks[, i]) & is.na(mults[, i]), i] <- 1
+  }
+  mults[is.na(mults)] <- 0
+
+  if (plot) {
+    withr::local_par(mar = c(0.3, 0.3, 0.3, 0.3))
+    .plotChunks(mults, chunks)
+  }
+  return(list(chunks = chunks, weights = mults))
+}
+
+.plotChunks <- function(mults, chunks, gamma = 1) {
+  graphics::image(1:nrow(mults), 1:ncol(mults), mults, col = grDevices::gray.colors(40, start = 1, end = 0, gamma = 1), xaxt = "n", yaxt = "n", bty = "n")
+  for (i in 1:ncol(mults)) {
+    hr <- range(chunks[, i], na.rm = TRUE)
+    graphics::rect(hr[1]-0.5, i-0.5, hr[2]+0.5, i + 0.5, border = 1, lty = 2)
+  }
+}
 
 # pdf("S:/Projets/Modelisation/Modèles/Seasonal Adjustment/Presentations-and-User-Guide/presentation-05-practical/long-overlap.pdf", 5, 1.5)
-# .splitWithOverlaps(n = 460, 12*12, l = 12, plot = TRUE)
+# splitOverlapFixed(n = 460, 12*12, l = 12, plot = TRUE)
 # dev.off()
 
 #' Read national calendars into the global environment.
@@ -1653,9 +1942,11 @@ getCalendars <- function(country = "Luxembourg", suffix = "lu", path = NULL) {
   cal.m$Date <- as.Date(cal.m$Date, format = "%d/%m/%Y")
   cal.q <- suppressMessages(makeTS(cal.q))
   cal.m <- suppressMessages(makeTS(cal.m))
-  assign(paste0("cal.", suffix, ".q"), cal.q, envir = .GlobalEnv)
-  assign(paste0("cal.", suffix, ".m"), cal.m, envir = .GlobalEnv)
-  print("Loaded the quartely and monthly calendars into the global environment as cal.q and cal.m.")
+  qn <- paste0("cal.", suffix, ".q")
+  mn <- paste0("cal.", suffix, ".m")
+  assign(qn, cal.q, envir = .GlobalEnv)
+  assign(mn, cal.m, envir = .GlobalEnv)
+  message(paste0("Loaded the quartely and monthly calendars into the global environment as ", qn, " and ", mn, "."))
   return(invisible(NULL))
 }
 
@@ -1992,11 +2283,18 @@ imputePanel7 <- function(x, trim = c(0.25, 0.25),
   return(res)
 }
 
+# TODO: diagSeas: return (as diagnostics) the AICcS for log-transform and TD
+# TODO: Return udg aictest.diff.Leap Year, aictest.diff.e
+# TODO: allow character calendar instead of matrices
+# TODO: create a data set for calendar and package it
+# TODO: plotSeas: if one model is MULT and another is ADD, plot differently (recompute the mult.)
 # TODO: write a function that would SA the series in parallel
 # TODO: diagnose robust M7 with all the series; there was a failure to invert something
-# TODO: add test case with a constant and a chaotic series
 # TODO: add positivity/negativity of adj. check for archival
-# TODO: add QS
+# TODO: add QS, Shapiro-Wilk
 # TODO: chunks with internal NAs example
-# TODO: getStat should return names if it gets a list; diagnoseSeas should return a named list for an mts
-
+# TODO: getSAStat should return names if it gets a list; diagnoseSeas should return a named list for an mts
+# TODO: produce aggregate full-sample M and Q for series with spans
+# TODO: example with outlier and missed level shift
+# TODO: example with a constant, example with a chaotic series
+# TODO: show estimation samples as brackets in plots

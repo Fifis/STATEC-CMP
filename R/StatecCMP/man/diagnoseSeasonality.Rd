@@ -17,7 +17,7 @@ diagnoseSeasonalityOne(
   easter = c("auto", "yes", "no"),
   forced.outliers = NULL,
   m7.threshold = 1,
-  m7.rule = c("robust", "original", "average", "force"),
+  sa.rule = c("robustM7", "M7", "averageM7", "yes", "no"),
   transform.aicdiff = -2,
   tradingdays.aicdiff = 0,
   plot.file = NULL,
@@ -40,7 +40,7 @@ diagnoseSeasonality(
   easter = c("auto", "yes", "no"),
   forced.outliers = NULL,
   m7.threshold = 1,
-  m7.rule = c("robust", "original", "average", "force"),
+  sa.rule = c("robustM7", "M7", "averageM7", "yes", "no"),
   transform.aicdiff = -2,
   tradingdays.aicdiff = 0,
   plot.file = NULL,
@@ -49,6 +49,10 @@ diagnoseSeasonality(
   split.long = TRUE,
   max.length = 15,
   overlap.length = 1,
+  custom.est.starts = NULL,
+  custom.est.ends = NULL,
+  custom.blend.starts = NULL,
+  custom.blend.ends = NULL,
   parallel = FALSE,
   mc.cores = 4
 )
@@ -79,7 +83,7 @@ TRUE translates to "log", FALSE translates to "none", NA or NULL to "auto".}
 
 \item{m7.threshold}{Numeric between 0 and 3: the procedure will produce SA series if the M7 statistic is less than this threshold. A value of 3 means that adjustment is always done.}
 
-\item{m7.rule}{Character: what kind of indicator compare to `m7.threshold`.}
+\item{sa.rule}{Character: what kind of indicator compare to `m7.threshold`.}
 
 \item{transform.aicdiff}{Numeric: the AICc difference between the additive (linear) and multiplicative (log) model; use log if AICc(nolog) - AICc(log) < aicdiff; by default, prefers multiplicative models}
 
@@ -101,11 +105,25 @@ TRUE translates to "log", FALSE translates to "none", NA or NULL to "auto".}
 
 \item{fcast.end}{An integer vector of length 2 denoting the last period till which backcasts should be computed. By default, no forecasts are produced.}
 
-\item{split.long}{If TRUE, long time series will be adjusted in chunks and then, blended together}
+\item{split.long}{If TRUE, long time series will be adjusted in chunks and then, blended together.
+Ignored if `custom.starts` is not `NULL`}
 
-\item{max.length}{Numeric: length of a chunk in years}
+\item{max.length}{Numeric: length of a chunk in years. Ignored if `split.long` is `FALSE` or if
+`custom.[est.starts, est.ends]` is not `NULL`.}
 
 \item{overlap.length}{Numeric: the end of one chunk will be blended with the beginning of another chunk over this number of years}
+
+\item{custom.est.starts}{A list of length-2 vectors, a data frame or a matrix with two columns:
+year and period denoting the starts of each chunk}
+
+\item{custom.est.ends}{A list of length-2 vectors, a data frame or a matrix with two columns:
+year and period denoting the ends of each chunk}
+
+\item{custom.blend.starts}{A list of length-2 vectors, a data frame or a matrix with two columns:
+year and period denoting the starts of blending periods between 2 estimation windows}
+
+\item{custom.blend.ends}{A list of length-2 vectors, a data frame or a matrix with two columns:
+year and period denoting the ends of blending periods between 2 estimation windows}
 
 \item{parallel}{If TRUE, estimates multiple series in parallel}
 
@@ -231,7 +249,7 @@ y15n <- diagnoseSeasonality(ylong3, transform = "no", easter = "no", leap.year =
                            max.length = 15, overlap.length = 0)
 y25 <- diagnoseSeasonality(ylong3, transform = "no", easter = "no", leap.year = "no",
                            max.length = 25, overlap.length = 1/12) # Only 1-point overlap
-getStat(list(y10, y15, y15n, y25))
+getSAStat(list(y10, y15, y15n, y25))
 plotSeas(y10)
 plotSeas(y15)
 plotSeas(y15n)
@@ -256,4 +274,20 @@ yshort.fc2 <- diagnoseSeasonality(ylong3, est.end = c(1999, 12), max.length = 10
                bcast.begin = c(1982, 11), fcast.end = c(2000, 1), bfcast.tails = TRUE,
                transform = "no", easter = "no", leap.year = "no")
 plotSeas(yshort.fc2)
+
+set.seed(1)
+x <- ts(rnorm(500), end = c(2022, 12), freq = 12)
+a <- diagnoseSeasonality(x, max.length = 15)
+# Custom breaks
+ce.st <- matrix(c(1981, 5, 1990, 1, 2005, 8, 2015, 2), ncol = 2, byrow = TRUE)
+ce.en <- matrix(c(1991, 1, 2007, 1, 2015, 1, 2022, 12), ncol = 2, byrow = TRUE)
+a2 <- diagnoseSeasonality(x, td = 0, transform = "no", leap.year = "no", easter = "no",
+                          custom.est.starts = ce.st, custom.est.ends = ce.en)
+# One break = supply the breaks as a list
+a3 <- diagnoseSeasonality(AirPassengers, transform = "yes", td = 1,
+                          custom.est.starts = list(c(1949, 1),  c(1953, 1)),
+                          custom.est.ends   = list(c(1957, 12), c(1960, 12)),
+                          custom.blend.starts = list(c(1953, 7)),
+                          custom.blend.ends   = list(c(1953, 12))
+                          )
 }

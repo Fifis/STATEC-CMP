@@ -25,4 +25,5 @@ Description: An R package that contains the frequently used functions and
              estimation, and output formatting.
 License: EUPL
 Encoding: UTF-8
+LazyData: true
 RoxygenNote: 7.2.3

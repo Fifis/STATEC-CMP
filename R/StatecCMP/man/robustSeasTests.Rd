@@ -4,13 +4,13 @@
 \alias{robustSeasTests}
 \title{Robustified identifiable and stable seasonality tests for X13 M7}
 \usage{
-robustSeasTests(x, type = c("rlm", "lm", "rank"))
+robustSeasTests(x, type = c("rlm", "lm", "rank", "nonrobust"))
 }
 \arguments{
 \item{x}{An object of class "seas" returned by [seasonal::seas]}
 
-\item{type}{Character: robust linear model (default), linear model, or
-rank regression.
+\item{type}{Character: "rlm"for a robust linear model (default), "lm" for a linear model,
+"rank" for the rank regression, or "nonrobust" for the homoskedasticity-based ANOVA.
 
 This function provides a long-overdue improvement for the X13 ANOVA-based tests
 due to Higgins (1975)
@@ -54,6 +54,7 @@ x1 <- AirPassengers
 x2 <- window(x1, start = c(1949, 12), end = c(1960, 1)) # With singular years
 sa1 <- seasonal::seas(x1, x11 = "")
 sa2 <- diagnoseSeasonality(x2)
+# getStat(list(sa1, sa2))
 robustSeasTests(sa1)
 robustSeasTests(sa2$seas)
 }
