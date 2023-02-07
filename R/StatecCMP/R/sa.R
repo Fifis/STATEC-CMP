@@ -662,6 +662,19 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
   freq <- stats::frequency(x)
   if (!(freq %in% c(4, 12))) stop("The data are not monthly or quarterly, aborting.")
   if (!is.null(calendar)) {
+    if (is.character(calendar)) {
+      all.cals <- utils::data(package = "StatecCMP")$results[, "Item"]
+      dname <- paste0(calendar, ".", if (freq == 4) "Q" else "M")
+      if (!(dname %in% all.cals)) {
+        all.countries <- unique(gsub("\\.[QM]", "", all.cals))
+        stop(paste0("Wrong calendar name supplied (", calendar, "). Available ones: ",
+                    paste0(all.cals, collapse = ", "), ".\nSupply a calendar from JDemetra+ or just remove the 'calendar' argument."))
+      }
+      utils::data(list = dname, package = "StatecCMP", envir = environment())
+      assign("calendar", get(dname))
+    }
+    cnames <- c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "LeapYear", "WorkingDays")
+    if (!all(colnames(calendar) %in% cnames)) stop(paste0("The calendar must be an 'mts' with the following series names:\n", paste0(cnames, collapse = ", "), "."))
     if (freq != stats::frequency(calendar)) stop("The frequency of the data is not equal to that of the calendar, aborting.")
     if (verbose > 1) cat("Using the user-supplied national calendar.\n")
   } else {
@@ -671,7 +684,7 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
   full.range <- getRangeVec(x)
   x.ind <- time2ind(x)
   # Not accepting NAs at the tails; trim with a warning
-  if (full.range["first"] != 1 | full.range["last"] != length(x)) {
+  if ((full.range["first"] != 1) | (full.range["last"] != length(x))) {
     warning(paste0("The series ", name, " has missing observations at the ends, dropping.\nIf you want to impute them by forecasting, use 'diagnoseSeasonality' instead."))
     x <- stats::window(x, start = x.ind[full.range["first"], ], end = x.ind[full.range["last"], ])
     full.range <- getRangeVec(x)
@@ -720,6 +733,9 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
   fo.time <- ind2time(fo.inds, freq)
   impossible.outliers <- fo.time < ind2time(x.ind[1, ], freq) | fo.time > ind2time(x.ind[n, ], freq)
   forced.outliers <- forced.outliers[!impossible.outliers]
+  # Deleting the zero after dot because the user may write something like ao2020.03,
+  # which is conceptually the same as ao2020.3, but the string is different
+  forced.outliers <- gsub("\\.0([1-9])$", ".\\1", forced.outliers)
   # Adding forced outliers as the regressors that should always be honoured
   td.vars <- c(td.vars, forced.outliers)
   wd.vars <- c(wd.vars, forced.outliers)
@@ -1240,8 +1256,10 @@ diagnoseRevisions <- function(old, new, nspans = NA, overlap.length = NA) {
 #'
 #' @param x A univariate or multivariate time series of class `ts` or `mts`.
 #' `diagnoseSeasonalityOne` accepts only univariate time series.
-#' @param calendar An object of class `mts` containing calendar regressors: Monday, ..., Saturday, LeapYear, WorkingDays.
-#' If NULL, the default X13 working-day calendar is used. If forecasting is required, should be longer than the series.
+#' @param calendar A country name (character) or an object of class `mts`
+#' containing calendar regressors: Monday, ..., Saturday, LeapYear, WorkingDays.
+#' If NULL, the default X13 working-day calendar is used.
+#' If forecasting is required, should be longer than the series.
 #' @param name A string with the name of the series for printing.
 #' @param bfcast.tails Logical: if x starts or ends with NA, produce the backcasts and forecasts for those periods?
 #' @param est.begin An integer vector of length 2 denoting the beginning of the estimation sample. By default, the first valid observation.
@@ -1276,6 +1294,9 @@ diagnoseRevisions <- function(old, new, nspans = NA, overlap.length = NA) {
 #' @param verbose Logical or integer. TRUE or 1 = basic output, 2  = detailed output.
 #' @param parallel If TRUE, estimates multiple series in parallel
 #' @param mc.cores The number of cores for the cluster to speed up the computations.
+#'
+#' To list all available countries, run `data(package = "StatecCMP")`. Each country
+#' should have a monthly and a quarterly calendar.
 #'
 #' If prediction out of the sample is requested and the calendar is custom, then,
 #' the calendar should be as long as the forecast horizon.
@@ -1350,8 +1371,7 @@ diagnoseRevisions <- function(old, new, nspans = NA, overlap.length = NA) {
 #' y3 <- addTS(10 + 0.2*x + ybase + nfridays)
 #' plot(y3) # No obvious seasonality
 #' y3sa <- diagnoseSeasonality(y3)
-#' getCalendars("Luxembourg")
-#' y3lu <- diagnoseSeasonality(y3, calendar = cal.lu.m)
+#' y3lu <- diagnoseSeasonality(y3, calendar = "Luxembourg")
 #'
 #' # Only weekend effects
 #' set.seed(1)
@@ -1362,7 +1382,7 @@ diagnoseRevisions <- function(old, new, nspans = NA, overlap.length = NA) {
 #'      plot.type = "single", col = 2:1)
 #'
 #' # Quarterly data
-#' apsa <- diagnoseSeasonality(datasets::AirPassengers)
+#' apsa <- diagnoseSeasonality(aggregate(datasets::AirPassengers, nfreq = 4))
 #' summary(apsa$seas)
 #'
 #' # Long series without any seasonal effects
@@ -1600,7 +1620,6 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
       } else old.sa <- new.sa <- NA
       stability.inds <- diagnoseRevisions(old.sa, new.sa, nspans = p, overlap.length = overlap.length)
       attr(res.list[[p]]$seas, "stability.inds") <- stability.inds # Saving for extraction by getSAStat
-      # TODO: internally, never plot; call seasPlot externally
 
       # Blending the series and the 'seas' internal series, too
       series.list <- lapply(res.list, "[[", "series")
@@ -1744,12 +1763,12 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
       if (verbose > 1) {
         cat("Blended the ", p, " results into one, saved the original models as the [[\"spans\"]] list.\n", sep = "")
         printSym("#", linelen)
+        cat("\n")
       }
-      return(out)
     } else {
-      res <- diagSeas(x = x.trim, name = name, nbcast = nbcast, nfcast = nfcast, plot.file = plot.file)
-      return(res)
+      out <- diagSeas(x = x.trim, name = name, nbcast = nbcast, nfcast = nfcast, plot.file = plot.file)
     }
+    return(out)
   }
 
   # If there are multiple time series, process them in parallel
@@ -1759,8 +1778,7 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = "Y",
     x.names <- colnames(x)
     if (is.null(x.names)) x.names <- paste0("Column", 1:ncol(x))
 
-    # TODO: Do the cluster stuff
-    # TODO: output to multiple files or increment the number
+    # Create room for cluster here
     ret <- lapply(1:k, function(i) diagSeasChunks(x.list[[i]], name = x.names[i],
                             est.begin = est.begin, est.end = est.end, bcast.begin = bcast.begin, fcast.end = fcast.end,
                             bfcast.tails = bfcast.tails, plot.file = plot.file))
@@ -1921,35 +1939,6 @@ splitOverlapCustom <- function(n, est.starts, est.ends,
 # pdf("S:/Projets/Modelisation/Modèles/Seasonal Adjustment/Presentations-and-User-Guide/presentation-05-practical/long-overlap.pdf", 5, 1.5)
 # splitOverlapFixed(n = 460, 12*12, l = 12, plot = TRUE)
 # dev.off()
-
-#' Read national calendars into the global environment.
-#'
-#' @param path Character: full directory path to use (ending with a slash).
-#' @param suffix Character: the extra string inserted in the name to distinguish
-#' calendars: the output will be saved as `cal.SUFFIX.m` and `cal.SUFFIX.q`
-#' @param country Character: file name (without the "-Q.csv") prefix
-#'
-#' @return Nothing; loads two MTS into the global environment.
-#' @export
-#'
-#' @examples
-#' tryCatch(getCalendars("France"), error = function(e) print("Calendar not found."))
-getCalendars <- function(country = "Luxembourg", suffix = "lu", path = NULL) {
-  if (is.null(path)) path <- "S:/Projets/Modelisation/Mod\u00E8les/Seasonal Adjustment/calendars/"
-  if (!(substr(path, nchar(path), nchar(path)) %in% c("/", "\\"))) stop("The 'path' argument should end with / or \\.")
-  cal.q <- utils::read.csv(paste0(path, country, "-Q.csv"))
-  cal.m <- utils::read.csv(paste0(path, country, "-M.csv"))
-  cal.q$Date <- as.Date(cal.q$Date, format = "%d/%m/%Y")
-  cal.m$Date <- as.Date(cal.m$Date, format = "%d/%m/%Y")
-  cal.q <- suppressMessages(makeTS(cal.q))
-  cal.m <- suppressMessages(makeTS(cal.m))
-  qn <- paste0("cal.", suffix, ".q")
-  mn <- paste0("cal.", suffix, ".m")
-  assign(qn, cal.q, envir = .GlobalEnv)
-  assign(mn, cal.m, envir = .GlobalEnv)
-  message(paste0("Loaded the quartely and monthly calendars into the global environment as ", qn, " and ", mn, "."))
-  return(invisible(NULL))
-}
 
 #' Reconstruct missing values in time series via multiple methods
 #'
@@ -2284,10 +2273,11 @@ imputePanel7 <- function(x, trim = c(0.25, 0.25),
   return(res)
 }
 
+# TODO: Do the cluster stuff
+# TODO: When a data frame is supplied, output to multiple files or increment the number
 # TODO: diagSeas: return (as diagnostics) the AICcS for log-transform and TD
 # TODO: Return udg aictest.diff.Leap Year, aictest.diff.e (+ print in verbose = 1)
-# TODO: allow character calendar instead of matrices
-# TODO: create a data set for calendar and package it
+# TODO: a function to visualise existing black-box inputs and outputs (and do at least some rudimentary M7)
 # TODO: plotSeas: if one model is MULT and another is ADD, plot differently (recompute the mult.)
 # TODO: write a function that would SA the series in parallel
 # TODO: with mts, plot to different files

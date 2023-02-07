@@ -1,4 +1,4 @@
 .onAttach <- function(libname, pkgname) {
-  packageStartupMessage("Statec functions and convenience wrappers, version 0.0.3, 2023-01-12.")
-  packageStartupMessage("Maintained by Michel Geller, previously by Andrei V. Kostyrka.")
+  packageStartupMessage("Statec functions and convenience wrappers, version 0.0.4, 2023-02-07.")
+  packageStartupMessage("Maintained by Michel Geller (michel.geller@statec.etat.lu),\npreviously by Andrei V. Kostyrka (andrei.kostyrka@gmail.com).")
 }

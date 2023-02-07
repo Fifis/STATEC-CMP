@@ -808,7 +808,7 @@ computeSpectrum <- function(x, apply.diff = TRUE, pad = 2, return.half = TRUE,
       graphics::abline(v = 0:6/12, lty = 2, lwd = lwd)
       graphics::abline(v = c(0.3482, 0.04464), lty = 3, lwd = lwd)
       legtext <- if (compact) c("Seas. (?)", "TD (?)") else c("Possible seas. freq.", "Possible trading-day freq.")
-      if (put.legend) graphics::legend(leg.pos, lty = c(2, 3), lwd = lwd)
+      if (put.legend) graphics::legend(leg.pos, legtext, lty = c(2, 3), lwd = lwd)
     }
 
   }
@@ -946,5 +946,47 @@ genRamp <- function(x, start = 2001.5, end = 2002.5, rev = FALSE) {
   ramp[start.ind:end.ind] <- seq(0, 1, length.out = end.ind - start.ind + 1)
   if (rev) ramp <- 1 - ramp
   return(ramp)
+}
+
+#' Load all Excel sheets as a list of vectors
+#'
+#' @param xlsxFile Character: path to the Excel file.
+#' @param verbose If TRUE, prints the loading progress (useful if the file is on the network drive).
+#' @param vector If TRUE, returns a list of vectors; otherwise, a list of data frames.
+#' @param lowercase If TRUE, converts the first column (supposedly containing the names) to lowercase.
+#' @param intercept2c If TRUE, replaces all instances of `"c"` with `"(Intercept)"` in the first column.
+#' @param ... Passed to `openxlsx::read.xlsx` that is applied to each detected sheet.
+#'
+#' To simply load the XLSX file as a list of sheets, invoke the function with
+#' `vector`, `lowercase`, and `intercept2c` set to `FALSE`.
+#'
+#' @return A list of named vectors or (if `vector` is `FALSE`, a list of data frames from the sheets).
+#' @seealso [openxlsx::read.xlsx()] for everything that can be passed to `...`.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # To compute contributions, load an Excel file where the 1st column
+#' # of each sheet contains names, and the second one, coefficient values
+#' readAllSheets("myfile.xlsx")
+#'
+#' # Simply load a file as a list of sheets
+#' readAllSheets("myfile.xlsx", vector = FALSE, lowercase = FALSE, intercept2c = FALSE)
+#' }
+readAllSheets <- function(xlsxFile, verbose = TRUE, vector = TRUE,
+                          lowercase = TRUE, intercept2c = TRUE, ...) {
+  sheet_names <- openxlsx::getSheetNames(xlsxFile)
+  l <- length(sheet_names)
+  sheet_list <- vector("list", l)
+  names(sheet_list) <- sheet_names
+  for (i in 1:l) {
+    sh <- openxlsx::read.xlsx(xlsxFile, sheet = sheet_names[i], ...)
+    if (lowercase) sh[, 1] <- tolower(sh[, 1])
+    if (intercept2c) sh[sh[, 1] == "c", 1] <- "(Intercept)"
+    if (vector) sh <- structure(sh[, 2], names = sh[, 1])
+    sheet_list[[i]] <- sh
+    if (verbose) cat("Read sheet ", i, "/", l, "\n", sep = "")
+  }
+  return(sheet_list)
 }
 

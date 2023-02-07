@@ -1,8 +1,8 @@
 Package: StatecCMP
 Type: Package
 Title: Convenience Wrappers and Functions for Statec
-Version: 0.0.2
-Date: 2023-01-10
+Version: 0.0.4
+Date: 2023-02-07
 Authors@R: c(person(given=c("Andreï", "Victorovitch"), family="Kostyrka",
         role="aut", email="andrei.kostyrka@gmail.com"),
 		person(given="Michel", family="Kostyrka",
@@ -17,6 +17,7 @@ Imports:
 	car, sandwich,
 	MASS,
 	imager,
+	openxlsx,
 	imputeTS, missMDA, Amelia,
     parallel, withr
 Description: An R package that contains the frequently used functions and

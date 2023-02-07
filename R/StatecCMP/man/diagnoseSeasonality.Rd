@@ -61,8 +61,10 @@ diagnoseSeasonality(
 \item{x}{A univariate or multivariate time series of class `ts` or `mts`.
 `diagnoseSeasonalityOne` accepts only univariate time series.}
 
-\item{calendar}{An object of class `mts` containing calendar regressors: Monday, ..., Saturday, LeapYear, WorkingDays.
-If NULL, the default X13 working-day calendar is used. If forecasting is required, should be longer than the series.}
+\item{calendar}{A country name (character) or an object of class `mts`
+containing calendar regressors: Monday, ..., Saturday, LeapYear, WorkingDays.
+If NULL, the default X13 working-day calendar is used.
+If forecasting is required, should be longer than the series.}
 
 \item{name}{A string with the name of the series for printing.}
 
@@ -128,6 +130,9 @@ year and period denoting the ends of blending periods between 2 estimation windo
 \item{parallel}{If TRUE, estimates multiple series in parallel}
 
 \item{mc.cores}{The number of cores for the cluster to speed up the computations.
+
+To list all available countries, run `data(package = "StatecCMP")`. Each country
+should have a monthly and a quarterly calendar.
 
 If prediction out of the sample is requested and the calendar is custom, then,
 the calendar should be as long as the forecast horizon.
@@ -205,8 +210,7 @@ nfridays <- aggregate(wdays == 5, by = list(yearmonth), FUN = sum)$x
 y3 <- addTS(10 + 0.2*x + ybase + nfridays)
 plot(y3) # No obvious seasonality
 y3sa <- diagnoseSeasonality(y3)
-getCalendars("Luxembourg")
-y3lu <- diagnoseSeasonality(y3, calendar = cal.lu.m)
+y3lu <- diagnoseSeasonality(y3, calendar = "Luxembourg")
 
 # Only weekend effects
 set.seed(1)
