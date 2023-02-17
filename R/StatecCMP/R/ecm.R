@@ -1,7 +1,8 @@
 #' Dynamic multipliers for an ARDL model
 #'
 #' @param endog.lag A numeric vector of AR coefficients on Y[t-1], Y[t-1] etc.
-#' @param exog.lag A list (!) of vectors of DL coefficients on X[t], X[t-1] etc.
+#' @param exog.lag A list (!) of named vectors of DL coefficients on X[t], X[t-1] etc.
+#' @param intercept The value of the intercept in the model. It is not plotted.
 #' @param h An integer scalar: horizon at which to terminate the iterative procedure
 #' @param shock.amount A scalar or numeric vector of the same length as the number of exogenous variables: change of each variable to which Y responds; 1 yields pure dynamic multipliers.
 #' @param xnames A character vector of human-readable expanded exogenous variable names.
@@ -15,6 +16,13 @@
 #' @param francais Logical: if TRUE, the labels are in French.
 #' @param ... Passed to all plot functions tha produce the plots.
 #'
+#' The generation of dynamic multipliers is carried out recursively. The list of exogenous
+#' lags should not include the intercept because the dynamic multipliers for the intercept
+#' are derived from the coefficients on the endogenous variables. Additionally, intercepts
+#' are not interpretable in terms of changes. Numerically,
+#' the dynamic multiplier for the intercept coincides with the multiplier on the
+#' error term times the value of the intercept.
+#'
 #' @return A numeric matrix containing the dynamic multipliers for the requested number of periods (one period per line), starting with period 0 in the 1st line.
 #' @export
 #' @seealso [computePropag()] uses dynamic multipliers to decompose the impact of shocks
@@ -23,29 +31,38 @@
 #'
 #' @examples
 #' rho <- 0.2
-#' dx <- c(x1 = 0.9, x2 = 0.2)
+#' dx <- c(x1 = 0.9, x2 = 0.2) # x2 is only in the short-run equation
 #' ECT <- -0.8
-#' lx <- c(x1 = -1.5, x2 = 0.5)
-#' ARDL.coef <- ECM2ARDL(dx.coef.list = dx, dy.coef.vec = rho, ECT = ECT, long.run = lx)
-#' dm <- genDynMult(endog.lag = ARDL.coef$AR, exog.lag = ARDL.coef$DL, add.legend = TRUE)
+#' lx <- c(x1 = -1.5, x3 = 0.5) # x3 is only in the long-run equation
+#' const <- 3
+#' b <- ECM2ARDL(dx.coef.list = dx, dy.coef.vec = rho, ECT = ECT, long.run = lx, intercept = const)
+#' dm <- genDynMult(endog.lag = b$AR, exog.lag = b$DL, intercept = 5, add.legend = TRUE)
 #' head(dm, 11)
-genDynMult <- function(endog.lag, exog.lag, h = 50, shock.amount = 1,
-                       xnames = NULL, resid.name = "rest", plot = TRUE,
+genDynMult <- function(endog.lag, exog.lag, intercept = 0, h = 50,
+                       shock.amount = 1,
+                       xnames = NULL, resid.name = "residual", plot = TRUE,
                        yname = NULL, samescale = TRUE, plot.horizon = 12,
                        format.fun = function(x) sprintf("%1.3f", x),
                        add.legend = FALSE, francais = FALSE, ...
                        ) {
   # The presence of a constant term does not change the responses of other variables
   if (is.vector(exog.lag, mode = "numeric")) exog.lag <- list(exog.lag)
-  k <- length(exog.lag[[1]]) # How many exogenous regressors
-  vn <- names(exog.lag[[1]])
   p <- length(endog.lag) # AR order
   q <- length(exog.lag) - 1 # Distributed lag order: the contemporaneous value is always there, i.e. q shows how many extras are there
-  if (q > 0) {
-    if (!all(diff(sapply(exog.lag, length)) == 0)) stop("The list of coefficients on exogenous lags must contain elements of equal lengths.")
+
+  cnlist <- lapply(exog.lag, names)
+  if (any(sapply(cnlist, is.null))) stop("genDynMult: The elements of 'exog.lag' must be named vectors.")
+  if (any(unlist(lapply(cnlist, function(x) isTRUE(x == "") | isTRUE(is.na(x)) | is.null(x))))) stop("genDynMult: Some elements of 'exog.lag' have empty names -- make sure you are passing fully named vectors.")
+  cnames <- unique(unlist(cnlist))
+  k <- length(cnames)      # How many exogenous regressors
+  b <- vector("list", q+1) # A list of equal-length coefficients in case some were missing
+  for (i in 1:(q+1)) {
+    b[[i]] <- numeric(k)
+    names(b[[i]]) <- cnames
+    b[[i]][names(exog.lag[[i]])] <- exog.lag[[i]]
   }
-  if (is.null(xnames)) xnames <- vn
-  if (is.null(xnames)) xnames <- paste0("V", 1:k)
+
+  if (is.null(xnames)) xnames <- cnames
   if (length(xnames) != k) stop(paste0("The list of variable names must have the same length (", length(xnames), ") as the number of coefficients (", k, ")."))
   for (i in 1:(q+1)) names(exog.lag[[i]]) <- xnames
 
@@ -90,14 +107,11 @@ genDynMult <- function(endog.lag, exog.lag, h = 50, shock.amount = 1,
     cat("=====\nPersistence remaining beyond lag ", h, ": ", signif(pers, 2), ".\n", sep = "")
   } else cat("=====\nPersistance restante au-del\u00E0 du retard ", h, ": ", signif(pers, 2), ".\n", sep = "")
   colnames(d) <- c("DroppedY", xnames, resid.name)
-  attr(d, "endog.lag") <- endog.lag # Extra output so that we know which coefficients yielded this
-  attr(d, "exog.lag") <- exog.lag
-  attr(d, "(Intercept)") <- sum(d[, e])
   d <- d[nrow(d):(max.order+1), -y]
 
   if (length(shock.amount) == 1) shock.amount <- rep(shock.amount, k+1)
   if (!all(shock.amount == 1)) {
-    if (length(shock.amount) != (k+1)) stop("The length of the shock.amount vector must equal the # of exogenous regressors + 1 (for the error)")
+    if (length(shock.amount) != (k+1)) stop("The length of the shock.amount vector must equal the # of exogenous regressors (no intercept) + 1 (for the error)")
     d <- sweep(d, 2, shock.amount, "*")
   }
 
@@ -128,6 +142,11 @@ genDynMult <- function(endog.lag, exog.lag, h = 50, shock.amount = 1,
     }
   }
 
+  attr(d, "endog.lag") <- endog.lag # Extra output so that we know which coefficients yielded this
+  attr(d, "exog.lag") <- exog.lag
+  attr(d, "intercept.multiplier") <- sum(d[, ncol(d)])
+  attr(d, "intercept.value") <- intercept
+
   return(d)
 }
 
@@ -135,11 +154,17 @@ genDynMult <- function(endog.lag, exog.lag, h = 50, shock.amount = 1,
 #' @rdname propag
 #' @param endog.lag Passed to [genDynMult()].
 #' @param exog.lag Passed to [genDynMult()].
-#' @param data A data frame or matrix with with the regressors (in the order in which they appear in exog.lag) and residuals in the last column.
+#' @param intercept Passed to [genDynMult()].
+#' @param data A data frame or matrix with with the regressors (`colnames(d)` must have all the names of the `exog.lag` vectors).
+#' @param dep.var.name If not NULL, use this variable from `data` as the observed values to compute the residuals.
+#' Corresponds to the *level* of the variable (i.e. the ARDL dependent variable), not the difference.
 #' @param xnames Passed to [genDynMult()].
 #' @param mult A numeric scalar or vector: multiplier(s) for the units of change; 100 yields percentages. Another useful option is apply(data, 2, sd).
 #' @param resid.name A label how to denote the residuals.
 #' @param francais Logical: if TRUE, the column names will be in French.
+#'
+#' The argument `exog.lag` should be a list of named coefficient vectors. These names must
+#' exist as variables in the data set.
 #'
 #' @return A numeric matrix containing the contribution by period type.
 #' @export
@@ -148,34 +173,84 @@ genDynMult <- function(endog.lag, exog.lag, h = 50, shock.amount = 1,
 #'
 #' @examples
 #' # Imagine an error-correction model:
-#' # dY = 0.2*dY(-1) + 0.9*dX1 + 0.2*dX2 - 0.8(Y(-1) - 1.5*X1(-1) + 0.5*X2(-1)) + U
+#' # dY = 10 + 0.2*dY(-1) + 0.9*dX1 + 0.2*dX2 - 0.8(Y(-1) - 1.5*X1(-1) + 0.5*X3(-1)) + U
 #' # Its ARDL equivalent is
-#' # Y = 0.4*Y(-1) - 0.2*Y(-2) + 0.9*X1 + 0.2*X2 + 0.3*X1(-1) - 0.6*X2(-1) + U
-#' b <- list(AR = c(0.4, -0.2), DL = list(L0 = c(0.9, 0.2), L1 = c(0.3, 0.6)))
-#' d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, n = 40)
-#' prpg <- computePropag(endog.lag = b$AR, exog.lag = b$DL, data = d[, -1], mult = 1)
-#' prpg[[40]]
+#' # Y = 10 + 0.4*Y(-1) - 0.2*Y(-2) + 0.9*X1 + 0.2*X2 + 0.3*X1(-1) - 0.2*X2(-1) - 0.4*X3(-1) + U
+#' b <- ECM2ARDL(c(X1=0.9, X2=0.2), 0.2, -0.8, c(X1=1.5, X3=-0.5), intercept = 10)
+#' d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, intercept = 10, n = 100)
+#' lm(Y ~ myLag(Y) + myLag(Y, 2) + X1 + X2 + X3 +
+#'        myLag(X1) + myLag(X2) + myLag(X3), data = d)
+#' prpg <- computePropag(endog.lag = b$AR, exog.lag = b$DL, dep.var.name = "Y",
+#'                       data = d, mult = 100)
+#' prpg[[100]] # mult = 100 yields percentage points
+#' all.equal(sum(prpg[[100]][3, ] / 100), diff(d$Y)[99]) # The decomposition adds up
 #' contrib.matrices <- quiet(printContrib(prpg, sums = FALSE, type = "twocolumn"))
 #' contrib.total <- t(contrib.matrices$ST + contrib.matrices$LT)
-#' tail(contrib.total)
-computePropag <- function(endog.lag, exog.lag, data,
-                          xnames = NULL, mult = 100,  resid.name = "reste", francais = TRUE
+#' round(tail(contrib.total), 1)
+#' ctotal <- rowSums(contrib.total / 100)
+#' plot(myDiff(d$Y), bty = "n", main = "Growth rates", type = "l", ylab = "", lwd = 3)
+#' lines(ctotal, col = 2)
+#' logScale <- function(x) {x <- log(abs(x), 10); x[is.nan(x)] <- 0; x}
+#' plot(logScale(myDiff(d$Y) - ctotal), bty = "n", main = "Discrepancy (log10)", type = "l")
+computePropag <- function(endog.lag, exog.lag, intercept = 0, data, dep.var.name = NULL,
+                          xnames = NULL, mult = 1, resid.name = "residual", francais = TRUE
 ) {
   if (!any(class(data) %in% c("data.frame", "matrix"))) stop("'data' must be a data frame or a matrix.")
   n <- nrow(data)
-  h <- n + 1 # "The dynamic multiplier horizon should be long enough to harness the full information
-  dx <- rbind(0, as.matrix(data[-1, ] - data[-nrow(data), ]))
+  if (is.vector(exog.lag, mode = "numeric")) exog.lag <- list(exog.lag)
+  p <- length(endog.lag)
+  q <- length(exog.lag)
 
-  dm <- quiet(genDynMult(endog.lag = endog.lag, exog.lag = exog.lag,
-                         h = h, xnames = xnames, plot = FALSE, resid.name = resid.name))
+  # Creating a single list of all variable names to complete the exogenous lag coefficients
+  # with zeros, if necessary
+  cnlist <- lapply(exog.lag, names)
+  if (any(sapply(cnlist, is.null))) stop("computePropag: The elements of 'exog.lag' must be named vectors.")
+  if (any(unlist(lapply(cnlist, function(x) isTRUE(x == "") | isTRUE(is.na(x)) | is.null(x))))) stop("computePropag: Some elements of 'exog.lag' have empty names -- make sure you are passing fully named vectors.")
+  cnames <- unique(unlist(cnlist))
+  if (!all(cnames %in% colnames(data))) stop(paste0("Not all variables from the names of 'exog.lag' are in 'data': ",
+                                               paste0(setdiff(cnames, colnames(data)), collapse = ", "), "."))
+  b <- vector("list", q) # A list of equal-length coefficients in case some were missing
+  for (i in 1:q) {
+    b[[i]] <- numeric(length(cnames))
+    names(b[[i]]) <- cnames
+    b[[i]][names(exog.lag[[i]])] <- exog.lag[[i]]
+  }
+
+  # Prepare the residuals if the dependent variable name was passed and it exists in the data set
+  # The residuals (i.e. shocks) equally contribute to the dynamics, and equally propagate
+  if (!is.null(dep.var.name)) {
+    if (class(dep.var.name) != "character" & length(dep.var.name) != 1) stop("computePropag: 'dep.var.name' must be one character string.")
+    if (!(dep.var.name %in% colnames(data))) stop(paste0("computePropag: you supplied a dependent variable name, ", dep.var.name, ", that is not in the data set."))
+    b <- do.call(rbind, exog.lag)
+    Y <- data[, dep.var.name]
+    rhs <- sapply((p+1):n, function(i) {
+      a <- intercept + sum(Y[i - 1:p] * endog.lag) + sum(as.matrix(data[i - 0:(q-1), cnames, drop = FALSE]) * b)
+      unname(a)
+    })
+    rhs <- c(rep(NA, p), rhs)
+    resid <- Y - rhs
+    resid[1:p] <- 0
+  } else {
+    resid <- rep(0, n)
+    warning("computePropag: The dependent variable, 'dep.var.name', was not supplied. Assuming zero residuals!")
+  }
+
+  data <- cbind(data[, cnames, drop = FALSE], resid)
+  colnames(data)[ncol(data)] <- resid.name
+
+  dx <- as.matrix(myDiff(data))
+  dx[1, ] <- 0
+
+  dm <- quiet(genDynMult(endog.lag = endog.lag, exog.lag = exog.lag, intercept = intercept,
+                         h = n-1, xnames = xnames, plot = FALSE, resid.name = resid.name))
   dm.all <- decomp <- vector("list", n)
   dm.all[2:n] <- lapply(2:n, function(i) sweep(dm, 2, dx[i, ]*mult, "*"))
   # Decomposing the changes at each period into the sum of components
   decomp[2:n] <- lapply(2:n, function(i) {
     increment.decomp <- dm[1:i, ] * dx[i:1, ] * mult # Decomposition of the present change via all dynamic multipliers
-    contrib.present  <- increment.decomp[1, ] # Short-run effect, lag 0
+    contrib.present  <- increment.decomp[1, ]        # Short-run effect, lag 0
     contrib.past     <- colSums(increment.decomp[-1, , drop = FALSE]) # Long-run contribution from all the past
-    inertia.present  <- colSums(dm.all[[i]][-1, ]) # Remaining inertia from the present into the future
+    inertia.present  <- colSums(dm.all[[i]][-1, , drop = FALSE])   # Remaining inertia from the present into the future
     # Remaining inertia from the past into the future
     # E.g. period i=5 has future inertia (t=6, ...) from the shocks in periods 2 {skipping mult. t+1..t+3}, 3 {skipping mult. t+1, t+2}, 4 {skipping mult. t+1}
     if (i > 2) {
@@ -192,8 +267,11 @@ computePropag <- function(endog.lag, exog.lag, data,
     if (francais) rownames(ret) <- c("Partie CT dans pr\u00E9sent", "Partie LT dans pr\u00E9sent", "Changement pr\u00E9sent total", "Propag. restante du pr\u00E9sent", "Propag. restante du pass\u00E9", "Propag. restante totale")
     return(ret)
   })
-  decomp[[1]] <- decomp[[2]]
+  decomp[[1]] <- decomp[[2]] # Nothing in the first period by definition: differences cannot be computed
   decomp[[1]][1:nrow(decomp[[1]]), 1:ncol(decomp[[1]])] <- NA
+
+  if (!is.null(rownames(data))) names(decomp) <- rownames(data)
+  attr(decomp, "residuals") <- resid
 
   return(decomp)
 }
@@ -202,36 +280,69 @@ computePropag <- function(endog.lag, exog.lag, data,
 #'
 #' @param endog.lag Numeric: coefficients on the lags of Y
 #' @param exog.lag A list of coefficients on X and its lags
-#' @param intercept Numeric: shift for the entire series
+#' @param intercept Numeric: intercept in the equation
+#' @param x.drift Numeric scalar: regressor drift
 #' @param seed Integer: seed for PRNG
 #' @param n Number of observations
+#' @param burn.in Number of observations at the beginning of the sample to omit to ensure that
+#' the data generated are not affected as much by the initial conditions.
+#'
 #'
 #' @return A data frame with the dependent variable, regressors, and errors
 #' @export
 #'
 #' @examples
-#' b <- list(AR = c(0.4, -0.2), DL = list(L0 = c(0.9, 0.2), L1 = c(0.3, 0.6)))
-#' d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, n = 40)
-#' d <- ts(d, start = c(2000, 1), freq = 4)
+#' b <- list(AR = c(0.4, -0.2), DL = list(c(0.9, 0.2), c(0.3, 0.6)))
+#' d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, n = 300)
+#' d <- ts(d, start = c(1990, 1), freq = 12)
 #' plot(d)
-simARDL <- function(endog.lag, exog.lag, intercept = 20, seed = 1, n = 300) {
+#' lm(Y ~ myLag(Y) + myLag(Y, 2) + X1 + X2 + myLag(X1) + myLag(X2), data = d)
+#' # One can simulate this with different seeds and observe consistent estimates
+simARDL <- function(endog.lag, exog.lag, intercept = 1, x.drift = 0.01,
+                    seed = 1, n = 300, burn.in = 10) {
+  n <- n + burn.in
   set.seed(seed)
   U <- stats::rnorm(n)
   p <- length(endog.lag)
-  k <- length(exog.lag[[1]])
+  if (is.vector(exog.lag, mode = "numeric")) exog.lag <- list(exog.lag)
+  q <- length(exog.lag)
+
+  # If the lengths of exog.lag are unequal, the vectors should be names to create
+  # a single list of all variables with zeros, if necessary
+  cnlist <- lapply(exog.lag, names)
+  if (q > 1) { # Lists with 1 element can be unnamed
+    is.eq.len <- all(diff(sapply(exog.lag, length)) == 0)
+    is.unnamed <- any(unlist(lapply(cnlist, function(x) isTRUE(x == "") | isTRUE(is.na(x)) | is.null(x)))) # If the lists have unnamed vectors
+    if (!is.eq.len &  is.unnamed) stop("simARDL: If the elements of 'exog.lag' have different lengths, they must be fully named vectors.")
+    if (is.eq.len & is.unnamed) { # Give names to regular vectors
+      for (i in 1:q) names(exog.lag[[i]]) <- paste0("X", 1:length(exog.lag[[1]]))
+    }
+  }
+  cnlist <- lapply(exog.lag, names)
+  cnames <- unique(unlist(cnlist))
+  k <- length(cnames)
+  b <- vector("list", q) # A list of equal-length coefficients in case some were missing
+  for (i in 1:q) {
+    b[[i]] <- numeric(k)
+    names(b[[i]]) <- cnames
+    b[[i]][names(exog.lag[[i]])] <- exog.lag[[i]]
+  }
+  k <- length(cnames)
+  exog.lag <- b
   q <- length(exog.lag) - 1
+
   X <- MASS::mvrnorm(n, mu = rep(1, k), Sigma = 0.7*diag(k) + matrix(0.3, k, k))
-  X <- X + (1:n)*0.01
-  X <- sweep(X, 2, rep(c(1, -1), k)[1:k], "*") # To have some variability
+  X <- X + (1:n) * x.drift
+  X <- sweep(X, 2, rep(c(1, -1), k)[1:k], "*") # To have some variability in the values
   colnames(X) <- paste0("X", 1:k)
   Y <- numeric(n)
   b <- do.call(rbind, exog.lag)
-  Y[1:p] <- sum(t(X[1:p, ]) * exog.lag[[1]]) + U[1:p]
-  for (i in (p+1):n) Y[i] <- sum(Y[i - 1:p] * endog.lag) + sum(X[i - 0:q, ] * b) + U[i]
-  Y <- Y + intercept
-  return(data.frame(Y = Y, X, U = U))
+  Y[1:p] <- intercept + sum(t(X[1:p, ]) * exog.lag[[1]]) + U[1:p]
+  for (i in (p+1):n) Y[i] <- intercept + sum(Y[i - 1:p] * endog.lag) + sum(X[i - 0:q, ] * b) + U[i]
+  d <- data.frame(Y = Y, X, U = U)[(burn.in+1):n, ]
+  rownames(d) <- 1:nrow(d) # The presence of the burn-in sample gives an inconvenient offset
+  return(d)
 }
-
 
 #' @rdname propag
 #' @param x A list of matrices each of which was returned by computePropag
@@ -419,64 +530,110 @@ plotWithForecast <- function(vars, vars.fc, data,
 
 #' Convert ECM coefficients to an equivalent ARDL
 #'
-#' @param dx.coef.list A list of numeric vectors of coefficients on contemporaneous and lagged regressor differences (\code{Dx[t-0]}, \code{Dx[t-1]}, ...).
+#' @param dx.coef.list A list of named numeric vectors of coefficients on contemporaneous and lagged regressor differences (\code{Dx[t-0]}, \code{Dx[t-1]}, ...).
 #' @param dy.coef.vec A numeric vector of coefficients on lagged dep. var. differences (\code{Dy[t-1]}, \code{Dy[t-2]}, ...).
 #' @param ECT A numeric scalar: coefficient on the ECT (adjustment strength). For stable models, must be between -2 and 0 (0 means that there is no error correction).
-#' @param long.run A numeric vector of coefficients on the lagged regressor levels (\code{x[t-1]}).
+#' @param long.run A named numeric vector of coefficients on the lagged regressor levels (\code{x[t-1]}).
+#' @param intercept A numeric scalar corresponding to the constant in the equation. Is returned in the final list without any changes.
 #' @param varnames A character vector for human-readable variable names.
+#' @param minus If `TRUE`, treats `long.run` as the long-run coefficient estimates `alpha` from the regression
+#' `Y[t] = X[t]'alpha + U`, and the error-correction equation has those terms with the minus sign:
+#' `dY[t] = ... + gamma*(Y[t-1] - X[t-1]'alpha)`. If `FALSE`, treats them with the opposite sign, e.g. assuming that
+#' user implied the OLS-estimable form `dY[t] = ... + gamma*Y[t-1] + X[t-1]'(gamma*alpha)`.
+#'
+#' In many applications, a simple error-correction model is estimated that is specified as follows:
+#'
+#' \deqn{\Delta Y_{t} = \mu + \sum_{i=1}^p \rho_i \Delta Y_{t-i} + \sum_{j=0}^q \Delta X_{t-j} + \gamma(Y_{t-1} - X_{t-1}'\alpha) + \varepsilon}
+#'
+#' Its terms can be rearranged into an equivalent ARDL model:
+#'
+#' \deqn{Y_t = \mu + (1 + \rho_1 + \gamma)Y_{t-1} + \sum_{i=2}^p (-\rho_{i-1} + \rho_i)Y_{t-i} + (-\rho_p)Y_{t-p-1} +}
+#'
+#' \deqn{\beta_0 X_t + (-\beta_0 + \beta_1 - \gamma \alpha) X_{t-1} + \sum_{j=2}^q (-\beta_{j-1} + \beta_j) X_{t-j} + (-\beta_q) X_{t-q-1} + \varepsilon}
+#'
+#' For example, a very common ECM(1) model
+#'
+#' \deqn{\Delta y_t =  \mu  + \rho \Delta y_{t-1}  + \Delta x_t ' \beta  + \gamma (y_{t-1} - x_{t-1}'\alpha)  + \varepsilon_t}
+#'
+#' can be represented as
+#'
+#' \deqn{y_t =  \mu + \rho_1 y_{t-1}  + \rho_2 y_{t-2}  + x_t' \beta_0  + x_{t-1}' \beta_1  + \varepsilon_t}
+#'
+#' If some elements of the DL structure, there is no need to include zeros (i.e. `exog.lag = list(c(x1 = .3, x2 = .4), c(x1 = .5, x3 = .6))`).
 #'
 #' @return A list of AR coefficient vector and DL coefficient list.
 #' @export
 #'
 #' @examples
 #' # Imagine an error-correction model:
-#' # dY = 0.2*dY(-1) + 0.9*dX1 + 0.2*dX2 - 0.8(Y(-1) - 1.5*X1(-1) + 0.5*X2(-1)) + U
+#' # dY = 0.2*dY(-1) + 0.9*dX1 + 0.2*dX2 - 0.8(Y(-1) - 1.5*X1(-1) + 0.5*X3(-1)) + U
 #' # Its ARDL equivalent is
-#' # Y = 0.4*Y(-1) - 0.2*Y(-2) + 0.9*X1 + 0.2*X2 + 0.3*X1(-1) - 0.6*X2(-1) + U
+#' # Y = 0.4*Y(-1) - 0.2*Y(-2) + 0.9*X1 + 0.2*X2 + 0.3*X1(-1) - 0.2*X2(-1) - 0.4*X3(-1) + U
 #' rho <- 0.2
 #' dx <- c(x1 = 0.9, x2 = 0.2)
 #' ECT <- -0.8
-#' lx <- c(x1 = -1.5, x2 = 0.5)
+#' lx <- c(x1 = 1.5, x3 = -0.5)
 #' ARDL.coef <- ECM2ARDL(dx.coef.list = dx, dy.coef.vec = rho, ECT = ECT, long.run = lx)
-ECM2ARDL <- function(dx.coef.list = NULL, dy.coef.vec = NULL, ECT, long.run, varnames = NULL) {
+#' ARDL.coef
+ECM2ARDL <- function(dx.coef.list = NULL, dy.coef.vec = NULL, ECT, long.run, intercept = 0,
+                     varnames = NULL, minus = TRUE) {
   if (is.null(dx.coef.list)) {
-    dx.coef.list <- list(numeric(length(long.run)))
+    dx <- numeric(length(long.run))
+    names(dx) <- names(long.run)
+    dx.coef.list <- list(dx)
     warning("There is no dX in the model, which is an atypical modelling choice.\nExogenous regressors are only in the EC term.")
   }
   if (is.null(dy.coef.vec)) {
     warning("There is no dY in the model, which is an atypical modelling choice.\nThe error-correction mechanism may be unstable.\nThe auto-regressive part is coming only from the EC term.")
   }
   if (is.vector(dx.coef.list, mode = "numeric")) dx.coef.list <- list(dx.coef.list)
-  x.order <- length(dx.coef.list) # At least one because there is the EC term
+  x.order <- length(dx.coef.list) # At least one because there is the long-run term
   y.order <- length(dy.coef.vec)
   ar.order <- y.order + 1
   dl.order <- x.order
-  k <- length(long.run)
-  if (!all(sapply(dx.coef.list, length) == k)) stop("The list of coefficients on exogenous lags must contain elements of the same length as the vector of long-run elasticities.\nDid you forget the intercept as the 1st element of each vector?")
+
+  # Creating a single list of all variable names to complete the exogenous variable coefficients with zeros, if necessary
+  cnlist <- lapply(dx.coef.list, names)
+  if (any(sapply(cnlist, is.null))) stop("ECM2ARDL: The elements of 'dx.coef.list' must be *named* vectors.")
+  if (any(unlist(lapply(cnlist, function(x) isTRUE(x == "") | isTRUE(is.na(x)) | is.null(x))))) stop("ECM2ARDL: Some elements of 'exog.lag' have empty names -- make sure you are passing fully named vectors.")
+  cnames <- unique(c(unlist(cnlist), names(long.run)))
+  k <- length(cnames) # Numer of exogenous variables
+  b <- vector("list", dl.order) # A list of equal-length coefficients in case some were missing
+  for (i in 1:dl.order) {
+    b[[i]] <- numeric(k)
+    names(b[[i]]) <- cnames
+    b[[i]][names(dx.coef.list[[i]])] <- dx.coef.list[[i]]
+  }
+  dx.coef.list <- b
+  # Now, extending the long-run coefficient vector to contain all variables
+  b <- numeric(k)
+  names(b) <- cnames
+  b[names(long.run)] <- long.run
+  long.run <- b
 
   ar.vec <- numeric(ar.order)
-  ar.vec[1] <- 1 + ECT + if (ar.order > 1) dy.coef.vec[1] else 0
-  if (length(ar.vec) > 1) ar.vec[length(ar.vec)] <- -dy.coef.vec[length(dy.coef.vec)]
-  if (length(ar.vec) > 2) ar.vec[-c(1, length(ar.vec))] <- dy.coef.vec[-1] - dy.coef.vec[-length(dy.coef.vec)]
+  ar.vec[1] <- 1 + ECT + if (ar.order > 1) dy.coef.vec[1] else 0 # The first element is always equal to this
+  if (length(ar.vec) > 1) ar.vec[length(ar.vec)] <- -dy.coef.vec[length(dy.coef.vec)] # The last element is always this single term
+  if (length(ar.vec) > 2) ar.vec[2:(length(ar.vec)-1)] <- dy.coef.vec[-1] - dy.coef.vec[-length(dy.coef.vec)]
   names(ar.vec) <- paste0("lag", seq_along(ar.vec), "_Y")
 
-  if (is.null(varnames)) varnames <- names(long.run)
-  varnames <- gsub("^lag1_", "", varnames)
+  if (is.null(varnames)) varnames <- cnames
+  if (length(varnames) != length(cnames)) stop(paste0("The list of variable names must have the same length (", length(varnames), ") as the number of coefficients (", length(cnames), ")."))
   dl.list <- vector(mode = "list", dl.order + 1) # Because the DL part starts from 0
   dl.list[[1]] <- dx.coef.list[[1]]
-  dl.list[[2]] <- -dx.coef.list[[1]] + ECT*long.run
+  dl.list[[2]] <- -dx.coef.list[[1]] + ECT*long.run * if (minus) -1 else 1
   if (dl.order > 1) {
     for (i in 2:dl.order) {
       dl.list[[i]]   <- dl.list[[i]] + dx.coef.list[[i]]
       dl.list[[i+1]] <- -dx.coef.list[[i]]
     }
   }
-  dl.list <- lapply(dl.list, function(x) {names(x) <- varnames; return(x)})
+  for (i in 1:(dl.order+1)) names(dl.list[[i]]) <- varnames
   names(dl.list) <- c("X[t]", paste0("X[t-", 1:dl.order, "]"))
   cat("Converting an ECMX(", y.order, ", ", x.order, ") into an ARDL(", ar.order, ", ", dl.order, ")\n", sep = "")
   cat("Y = ", paste0("r", 1:ar.order, "*Y(-", 1:ar.order, ")", collapse = " + "), " + ", gsub("\\(-0\\)", "", paste0("b", 0:dl.order, "'X(-", 0:dl.order, ")", collapse = " + ")), " + U\n" , sep = "")
 
-  return(list(AR = ar.vec, DL = dl.list))
+  return(list(AR = ar.vec, DL = dl.list, intercept = intercept))
 }
 
 #' Relative importance of regressors in the Elastic Net path
@@ -552,34 +709,56 @@ plotImportance <- function(vi, col = NULL,
 #'
 #' @param x An object of class anova (from car::linearHypothesis) or htest (from nlWaldTest::nlWaldlest)
 #' @param hyp Optional: human-readable hypothesis name
-#' @param digits Number of p-values digits to print.
+#' @param digits Number of p-value digits to print.
 #'
-#' @return Nothing (invisible NULL).
+#' This function is useful when many hypotheses need to be tested interactively or in a markdown
+#' file, and the output of `car::linearHypothesis()` is too bulky.
+#'
+#' @return A named numeric vector of length 3: degrees of freedom, F statistic, p-value.
 #' @export
 #'
 #' @examples
+#' m <- lm(mpg ~ factor(cyl) + disp + hp + wt + vs + gear, data = datasets::mtcars)
+#' hyp1 <- c("vs = gear")
+#' hyp2 <- c("disp = 0", "wt = -3", "vs = gear")
+#' vHC <- sandwich::vcovHC(m)
+#' htest1 <- car::linearHypothesis(m, hyp1, vcov. = vHC)
+#' htest2 <- car::linearHypothesis(m, hyp2, vcov. = vHC)
+#' print(htest1) # Long
+#' print(htest2)
+#' printShort(htest1, hyp = "equal effects")
+#' printShort(htest2, hyp = "empirically driven guesses")
+#'
+#' # Works with arbitrary test that return an 'htest' class
+#' # Suppose that we want to test the similarity of two distributions: mpg & hp
+#' plot(ecdf(scale(mtcars$mpg)), xlim = c(-3, 3)); par(new = TRUE)
+#' plot(ecdf(scale(mtcars$hp)), col = 2, main = "", xlim = c(-3, 3), ylab = "", xlab = "")
+#' htest3 <- ks.test(scale(mtcars$mpg), scale(mtcars$hp))
+#' print(htest3) # Long
+#' printShort(htest3, "mpg and hp have the same distribution (KS test)")
 printShort <- function(x, hyp = NULL, digits = 3) {
   if ("anova" %in% class(x)) {
     which.eq <- grep("=", attr(x, "heading"))
     hh <- attr(x, "heading")[which.eq]
     hh <- gsub("[ \t]+", " ", hh)
-    if (length(hh) == 1) h <- paste0("Hypothesis: ", hh) else {
-      h <- paste0("Hypotheses:\n", paste0("(", 1:length(hh), ") ", hh, collapse = "\n"))
-    }
+    h <- if (length(hh) == 1) paste0("Hypothesis", if (is.null(hyp)) "" else paste0(" (", hyp, ")"), ": ", hh) else
+      paste0("Hypotheses: ", hyp, "\n", paste0("(", 1:length(hh), ") ", hh, collapse = "; "))
     df <- x[2, 2]
     f <- x[2, 3]
     p <- x[2, 4]
   } else if ("htest" %in% class(x)) {
     h <- hyp
-    if (is.null(h)) h <- paste0("Parametric hypothesis test for ", x$data.name) else {
-      if (length(h) == 1) h <- paste0("Hypothesis: ", h) else h <- paste0("Hypotheses:\n", paste0("(", 1:length(h), "): ", h, collapse = "\n"))
+    if (is.null(h)) h <- paste0("Hypothesis test for ", x$data.name) else {
+      h <- if (length(h) == 1) paste0("Hypothesis: ", h) else paste0("Hypotheses:\n", paste0("(", 1:length(h), "): ", h, collapse = "\n"))
     }
     df <- unname(x$parameter)
     f <- unname(x$statistic)
     p <- unname(x$p.value)
-  } else stop("This function works only for car::linearHypothesis and nlWaldTest::nlWaldtest")
-  cat("\n", h, "\n", "df=", df, ", F=", sprintf("%1.2f", f), ", p=", sprintf(paste0("%1.", digits, "f"), p), "\n", sep = "")
-  return(invisible(NULL))
+  } else stop("This function was designed for car::linearHypothesis and nlWaldTest::nlWaldtest\nand accepts only the objects of 'anova' and 'htest' classes as inputs.")
+  cat("\n", h, "\n", if (!is.null(df)) paste0("df=", df, ", ") else "",
+      if (!is.null(names(f))) names(f)[1] else "statistic", "=", sprintf("%1.2f", f),
+      ", p=", sprintf(paste0("%1.", digits, "f"), p), "\n", sep = "")
+  return(invisible(c(df = df, f = f, p = p)))
 }
 
 #' Extract the error-correction term from an ECM
@@ -590,10 +769,29 @@ printShort <- function(x, hyp = NULL, digits = 3) {
 #' @param centre If TRUE, subtract the mean. Use for unrestricted constant.
 #' @param detrend If TRUE, subtract the linear trend Use for unrestricted trend
 #'
+#' If the model was estimated in the 'restricted constant' or 'unrestricted constant'
+#' framework (cases 2 and 3 from Johansen (1995)), then, the error-correction term
+#' is mean-zero. Case 1 (non-zero-mean ECT) is rare in practice, and can be represented
+#' by setting `centre = FALSE`. Likewise, cases 4 and 5 (restricted and unrestricted trend)
+#' are handled via `detrend = TRUE`.
+#'
 #' @return A numeric vector of long-run residuals (Y[t-1] - X[t-1]'b).
 #' @export
 #'
 #' @examples
+#' # Imagine an error-correction model:
+#' # dY = 10 + 0.2*dY(-1) + 0.9*dX1 + 0.2*dX2 - 0.8(Y(-1) - 1.5*X1(-1) + 0.5*X2(-1)) + U
+#' # To simulate this DGP, we convert it to ARDL:
+#' b <- ECM2ARDL(dx.coef.list = c(X1=0.9, X2=0.2), dy.coef.vec = 0.2,
+#'               ECT = -0.8, long.run = c(X1=1.5, X2=-0.5), intercept = 5)
+#' d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, intercept = b$intercept, n = 200)
+#' plot(ts(d))
+#' m <- lm(myDiff(Y) ~ myLag(myDiff(Y)) + myDiff(X1) + myDiff(X2) +
+#'         myLag(Y) + myLag(X1) + myLag(X2), data = d)
+#' yn <- "myLag(Y)"
+#' xn <- c("myLag(X1)", "myLag(X2)")
+#' getLR(m, yn, xn) # Show the LR elasticities
+#' plot(ts(getECT(m, yn, xn)), ylab = "LR resid.", bty = "n") # LR residual
 getECT <- function(x, yname, xnames, centre = TRUE, detrend = FALSE) {
   m <- if ("restriktor" %in% class(x)) stats::model.matrix(x[["model.org"]]) else stats::model.matrix(x)
   b <- if ("restriktor" %in% class(x)) x[["b.restr"]] else stats::coef(x)
@@ -605,11 +803,12 @@ getECT <- function(x, yname, xnames, centre = TRUE, detrend = FALSE) {
   return(ec)
 }
 
-#' @describeIn printECM Extract the long-run elasticities
+#' Extract the long-run elasticities from an OLS-estimated ECM
+#' @rdname printECM
 #' @export
-getLR <- function(x, yname, xnames) {
+getLR <- function(x, yname, xnames, minus = TRUE) {
   b <- if (is.numeric(x)) x else stats::coef(x)
-  elast <- b[xnames] / b[yname]
+  elast <- b[xnames] / b[yname] * if (minus) -1 else 1
   return(elast)
 }
 
@@ -625,10 +824,36 @@ getLR <- function(x, yname, xnames) {
 #' @param select A character vector showing which parts of the equation to keep for reporting.
 #' @param minus Logical: multiply the OLS long-run estimates by -1?
 #'
+#' TODO: fix the internal getECM function because with incomplete SR/LR parts, the output is broken
+#' (see example below)
+#'
 #' @return Invisibly returns the matrices that have just been shown (without rounding).
 #' @export
 #'
 #' @examples
+#' # Imagine an error-correction model with 3 regressors, one of this is SR-only
+#' # and one is LR-only:
+#' # dY = 10 + 0.2*dY(-1) + 0.9*dX1 + 0.2*dX2 - 0.8(Y(-1) - 1.5*X1(-1) + 0.5*X3(-1)) + U
+#' # To simulate this DGP, we convert it to ARDL:
+#' b <- ECM2ARDL(dx.coef.list = c(X1=0.9, X2=0.2), dy.coef.vec = 0.2,
+#'               ECT = -0.8, long.run = c(X1=1.5, X3=-0.5), intercept = 5)
+#' d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, intercept = b$intercept, n = 50)
+#' plot(ts(d))
+#' # Preparing variables with nice names: lags, and differences
+#' yn <- "Y"
+#' xn <- c("X1", "X2", "X3")
+#' vn <- c(yn, xn)
+#' d[, paste0("lag1_", vn)] <- myLag(d[, vn])
+#' d[, paste0("d_", vn)] <- myDiff(d[, vn])
+#' d[, paste0("d_lag1_", vn)] <- myDiff(myLag(d[, vn]))
+#' # Model 1: full model with all regressors included
+#' m1 <- lm(d_Y ~ d_lag1_Y + d_X1 + d_X2 + d_X3 +
+#'          lag1_Y + lag1_X1 + lag1_X2 + lag1_X3, data = d)
+#' # Model 2: true model (should be more efficient)
+#' m2 <- lm(d_Y ~ d_lag1_Y + d_X1 + d_X2 + lag1_Y + lag1_X1 + lag1_X3, data = d)
+#' printECM(m2, yname = yn, xnames = xn, d.prefix = "d_", lag.prefix = "lag1_")
+#' printECM(m1, m2, yname = yn, xnames = xn,
+#'          d.prefix = "d_", lag.prefix = "lag1_")
 printECM <- function(..., yname, xnames,
                      d.prefix = "d_", lag.prefix = "lag1_", mod.names = NULL,
                      shorten = function(x) formatC(x, format = "f", digits = 2, flag = " "),
@@ -646,8 +871,8 @@ printECM <- function(..., yname, xnames,
       x <- x[[1]]
       cat("ECM summary for one ", paste0(class(x), collapse = "-"), " model\n", sep = "")
       if (any(c("lm", "restrikor", "conLM") %in% class(x))) { # Print a single ECM
-        out <- getECM(x = x, yname = yname, xnames = xnames, d.prefix = d.prefix, lag.prefix = lag.prefix)
-        fx  <- cbind(Short = shorten(out$short), Long = shorten(out$long * if (minus) -1 else 1))
+        out <- getECM(x = x, yname = yname, xnames = xnames, d.prefix = d.prefix, lag.prefix = lag.prefix, minus = minus)
+        fx  <- cbind(Short = shorten(out$short), Long = shorten(out$long))
         # rownames(fx) <- xnames
         print(fx, quote = FALSE)
         cat("\nError correction strength: ", shorten(out$EC), ".\nAuto-regressive term: ", shorten(out$inertia), ", intercept: ", shorten(out$Intercept), ".\n", sep = "")
@@ -661,7 +886,7 @@ printECM <- function(..., yname, xnames,
   if (length(x) == 1) x <- unlist(x, recursive = FALSE)
   xclasses <- sapply(x, function(x) any(c("lm", "restrikor", "conLM") %in% class(x)))
   if (!all(xclasses)) stop(paste0("This function supports only lm, conLM and restriktor objects.\nProblematic object indices: ", paste0(which(!xclasses), collapse = ", ")))
-  coefs <- lapply(x, function(a) getECM(x = a, yname = yname, xnames = xnames, d.prefix = d.prefix, lag.prefix = lag.prefix))
+  coefs <- lapply(x, function(a) getECM(x = a, yname = yname, xnames = xnames, d.prefix = d.prefix, lag.prefix = lag.prefix, minus = minus))
   uniq.names.short <- unique(unlist(lapply(coefs, function(x) names(x[["short"]]))))
   uniq.names.long <- unique(unlist(lapply(coefs, function(x) names(x[["long"]]))))
   EC <- do.call(cbind, lapply(coefs, "[[", "EC"))
@@ -713,7 +938,7 @@ printECM <- function(..., yname, xnames,
 #' @param na.to.zero If TRUE, replace NAs with zeros.
 #' @param incorporate.intercept If TRUE, report the intercept in the short-run part.
 #' @export
-getECM <- function(x, yname, xnames, d.prefix, lag.prefix,
+getECM <- function(x, yname, xnames, d.prefix, lag.prefix, minus = TRUE,
                    na.to.zero = FALSE, incorporate.intercept = FALSE) {
   b <- if (is.numeric(x)) x else stats::coef(x)
   xnames <- unique(xnames) # Safety check to ensure that setdiff() worke properly
@@ -749,6 +974,7 @@ getECM <- function(x, yname, xnames, d.prefix, lag.prefix,
   if (!isTRUE(is.finite(ac))) ac <- NA
   dx[c(common.vars, extra.vars)] <- c(b.sr, b.rest)
   lx[common.vars] <- b.lr
+  if (minus) lx <- -lx
 
   if (incorporate.intercept) {
     dx["(Intercept)"] <- unname(b["(Intercept)"])
@@ -1193,7 +1419,7 @@ testActiveConstraints <- function(rmod,
 #' Note that the dependent variable should be NA for the period for which the forecast is requested (because the forecasting starts from the last observed value).
 #' @param yname A string with the dependent variable name.
 #' @param resid.name A string with the name for the last term of the RHS (the residual with a unit coefficient on it)
-#' @param d.prefix A string that should precede every differenced variables (usually d_)
+#' @param d.prefix A string that should precede every differenced variables (usually "d_").
 #' @param lag.prefix A string that should to precede first lags.
 #' @param linear.pred.name Name of the predicted right-hand-side variable to write
 #' @param return.full.df Return the full data frame, or just the predicted levels and differences?
@@ -1202,11 +1428,37 @@ testActiveConstraints <- function(rmod,
 #' @export
 #'
 #' @examples
+#' # Imagine an error-correction model:
+#' # dY = 10 + 0.2*dY(-1) + 0.9*dX1 + 0.2*dX2 - 0.8(Y(-1) - 1.5*X1(-1) + 0.5*X2(-1)) + U
+#' # To simulate this DGP, we convert it to ARDL:
+#' b <- ECM2ARDL(dx.coef.list = c(X1=0.9, X2=0.2), dy.coef.vec = 0.2,
+#'               ECT = -0.8, long.run = c(X1=1.5, X2=-0.5), intercept = 5)
+#' d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, intercept = b$intercept, n = 56)
+#' d$trueY <- d$Y
+#' d$trued_Y <- myDiff(d$trueY)
+#' d$Y[51:56] <- NA # The last 6 values are not observed
+#' plot(ts(d))
+#' # Preparing variables with nice names: lags, and differences
+#' yn <- "Y"
+#' xn <- c("X1", "X2")
+#' vn <- c(yn, xn)
+#' d[, paste0("lag1_", vn)] <- myLag(d[, vn])
+#' d[, paste0("d_", vn)] <- myDiff(d[, vn])
+#' d[, paste0("d_lag1_", vn)] <- myDiff(myLag(d[, vn]))
+#' m <- lm(d_Y ~ d_lag1_Y + d_X1 + d_X2 + lag1_Y + lag1_X2 + lag1_X2, data = d)
+#' y.fc <- predictECM(m, newdata = d[-1, ], yname = "Y")
+#' new.inds <- as.numeric(names(y.fc$difference))
+#' plot(ts(d$d_Y), main = "Forecast change rates")
+#' lines(new.inds, y.fc$difference, col = 2, lwd = 2)
+#' lines(new.inds, d$trued_Y[new.inds], lty = 2)
+#' plot(ts(d$Y), main = "Forecast levels")
+#' lines(new.inds, y.fc$level, col = 2, lwd = 2)
+#' lines(new.inds, d$trueY[new.inds], lty = 2)
 predictECM <- function(x, newdata, yname,
                        d.prefix = "d_", lag.prefix = "lag1_",
-                      return.full.df = FALSE,
-                      linear.pred.name = "Xb",
-                      resid.name = "resid"
+                       return.full.df = FALSE,
+                       linear.pred.name = "Xb",
+                       resid.name = "residuals"
                       ) {
   if ("restriktor" %in% class(x)) x <- restriktor::coef.restriktor(x) else
     if (!is.numeric(x)) x <- tryCatch(stats::coef(x), error = function(e) stop("'x' is not a numeric, and the coefficients could not be extracted from it via stats::coef(x). Check the input type (numeric or model)."))
@@ -1254,6 +1506,8 @@ predictECM <- function(x, newdata, yname,
   if (is.null(first.miss.d)) {
     warning("The difference of ", yname, ", ", names.lhs, ", has no missing values, but ", yname, " does. Discarding the predicted differences to match the missing levels.")
     newdata[y.miss, names.lhs] <- NA
+  } else if (first.miss.d == 1) {
+    stop("The data must start with a non-missing observation for the differenced dependent variable.\nExclude the incomplete initial observations.")
   } else if (first.miss.d < first.miss) { # There are more missing differences than observed levels
     newdata[first.miss.d:first.miss, names.lhs] <- diff(newdata[(first.miss.d-1):first.miss, yname])
   } else if (first.miss.d > first.miss) {
@@ -1295,10 +1549,37 @@ predictECM <- function(x, newdata, yname,
 #' @param d.prefix Character: a regex for identifying differenced variables.
 #' @param lag.prefix Character: a regex for identifying lagged variables.
 #'
+#' TODO: create a class for ECMs for easier prediction and estimation.
+#' So far, there are too many functions not using any meta-information.
+#' TODO: this can be achieved by merging getECM and printECM into a unified
+#' function that can handle models with different variables in the SR/LR parts.
+#'
 #' @return A named list with separated ECM components (named vectors).
 #' @export
 #'
 #' @examples
+#' # Imagine an error-correction model with 3 regressors, one of this is SR-only
+#' # and one is LR-only:
+#' # dY = 10 + 0.2*dY(-1) + 0.9*dX1 + 0.2*dX2 - 0.8(Y(-1) - 1.5*X1(-1) + 0.5*X3(-1)) + U
+#' # To simulate this DGP, we convert it to ARDL:
+#' b <- ECM2ARDL(dx.coef.list = c(X1=0.9, X2=0.2), dy.coef.vec = 0.2,
+#'               ECT = -0.8, long.run = c(X1=1.5, X3=-0.5), intercept = 5)
+#' d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, intercept = b$intercept, n = 50)
+#' plot(ts(d))
+#' # Preparing variables with nice names: lags, and differences
+#' yn <- "Y"
+#' xn <- c("X1", "X2", "X3")
+#' vn <- c(yn, xn)
+#' d[, paste0("lag1_", vn)] <- myLag(d[, vn])
+#' d[, paste0("d_", vn)] <- myDiff(d[, vn])
+#' d[, paste0("d_lag1_", vn)] <- myDiff(myLag(d[, vn]))
+#' # Model 1: full model with all regressors included
+#' m1 <- lm(d_Y ~ d_lag1_Y + d_X1 + d_X2 + d_X3 +
+#'          lag1_Y + lag1_X1 + lag1_X2 + lag1_X3, data = d)
+#' # Model 2: true model (should be more efficient)
+#' m2 <- lm(d_Y ~ d_lag1_Y + d_X1 + d_X2 + lag1_Y + lag1_X1 + lag1_X3, data = d)
+#' guessECM(m1)
+#' guessECM(m2)
 guessECM <- function(mod, d.prefix = "^d_", lag.prefix = "^lag1?_") {
   x <- all.vars(stats::formula(mod))
   dy <- x[1] # Dependend variable: Delta y[t]
@@ -1342,5 +1623,111 @@ guessECM <- function(mod, d.prefix = "^d_", lag.prefix = "^lag1?_") {
   return(ret)
 }
 
-# TODO: create a class for ECMs for easier prediction and estimation
-# So far, there are too many functions not using any meta-information
+#' Visualise the past and present contributions in error-correction models
+#'
+#' @param x A list returned by `printContrib(, type = "twocolumn")` with two matrices with identical dimensions.
+#' The first matrix is assumed to contain short-run contributions, the second one -- long-run ones.
+#' @param single.plot If `TRUE`, produces a single bar plot instead of three vertically stacked ones.
+#' @param col A vector of colours for the bar elements.
+#' @param main Character: if `single.plot` is `TRUE`, the plot title.
+#' @param dep.var.name Character: the variable name to be added to the title.
+#' @param las Integer: label orientation (passed to `axis()`). If `NULL`, uses `1` (normal) for single plots and `2` (90 CCW) for multiple plots.
+#' @param left.bar.skip Numeric: how many full column widths to skip? Defaults to extra 25\% space.
+#' @param leg.pos Character: legend position (passed to `legend()`),
+#' @param mar Numeric of length 4: passed to `par()` (margins for plots)
+#' @param ... Passed to `negBarPlot()`.
+#'
+#' The multiple plots are always plotted in the same vertical scale (for comparability).
+#'
+#' @return Nothing (invisible NULL).
+#' @export
+#'
+#' @examples
+#' # This function works with arbitrary matrices
+#' set.seed(1)
+#' xn <- c("GDP", "Empl", "Infl")
+#' x <- list(matrix(rnorm(12), 3, 4, dimnames = list(xn, 2019:2022)),
+#'           matrix(rnorm(12), 3, 4, dimnames = list(xn, 2019:2022)))
+#' plotContribECM(x)
+plotContribECM <- function(x, single.plot = TRUE, col = NULL,
+                           main = "Contribution decomposition", dep.var.name = "dep. var.",
+                           las = NULL, left.bar.skip = NULL, leg.pos = "topleft",
+                           mar = NULL,
+                           ...) {
+  st <- x[[1]]
+  lt <- x[[2]]
+  if ((!is.matrix(st)) | (!is.matrix(lt))) stop("plotContribECM: the input 'x' must be a list of two matrices.")
+  if (!all(dim(st) == dim(lt))) stop("plotContribECM: the matrices in 'x' must have identical dimensions.")
+  tot <- st + lt
+  vn <- if (!is.null(rownames(tot))) rownames(tot) else paste0("V", 1:ncol(tot))
+  sump <- function(x) sum(x[x>0], na.rm = TRUE)
+  sumn <- function(x) sum(x[x<0], na.rm = TRUE)
+  mlist <- list(st, lt, tot)
+  spos <- lapply(mlist, function(d) apply(d, 2, sump))
+  sneg <- lapply(mlist, function(d) apply(d, 2, sumn))
+  sts <- colSums(st, na.rm = TRUE)
+  lts <- colSums(lt, na.rm = TRUE)
+  tots <- colSums(tot, na.rm = TRUE)
+  stpos <- apply(st, 2, sump)
+  yl <- range(st, lt, tot, unlist(spos), unlist(sneg), na.rm = TRUE)
+  yl <- yl + diff(yl)*c(-0.03, 0.06) # Extending the range vertically by 5%
+  if (is.null(col)) col <- grDevices::rainbow(nrow(tot), end = 0.8, v = 0.8)
+
+  if (single.plot) {
+    if (is.null(las)) las <- 1
+    if (is.null(left.bar.skip)) left.bar.skip <- ncol(st)*3/4
+    if (is.null(mar)) mar <- c(3, 3, 4, 0.2)
+    # We need to hack the matrix to display the stacked bars side by side
+    # ST, LT, sum, empty
+    big.mat <- do.call(cbind, lapply(1:ncol(st), function(i) cbind(st[, i], lt[, i], tot[, i], NA)))
+    big.mat <- big.mat[, -ncol(big.mat)]
+    grDevices::pdf(file = NULL) # To avoid plotting the preliminary version, especially in markdowns
+    b0 <- negBarPlot(big.mat) # To get the limits
+    grDevices::dev.off()
+    cw <- b0[2] - b0[1] # Width of 1 column
+    xl <- c(-cw*left.bar.skip, max(b0) + cw/2)
+    withr::local_par(mar = mar)
+    b <- negBarPlot(big.mat, # ...,
+                    xlim = xl, ylim = yl, col = col, main = paste0(main, " (", dep.var.name, ")"))
+    vpos <- apply(big.mat, 2, function(x) sum(x[x>0]))
+    txt <- rep(c("S", "L", "T", ""), ncol(st))
+    txt <- txt[-length(txt)]
+    graphics::text(b, vpos, txt, pos = 3)
+    graphics::points(b[which(txt == "S")], sts, pch = 18, cex = 1.3, col = "#FFFFFF"); graphics::points(b[which(txt == "S")], sts, pch = 18)
+    graphics::points(b[which(txt == "L")], lts, pch = 16, cex = 1.3, col = "#FFFFFF"); graphics::points(b[which(txt == "L")], lts, pch = 16)
+    graphics::points(b[which(txt == "T")], tots, pch = 15, cex = 1.3, col = "#FFFFFF"); graphics::points(b[which(txt == "T")], tots, pch = 15)
+    if (!is.null(colnames(tot))) graphics::axis(1, at = b[which(txt == "L")], labels = colnames(tot), las = las)
+    graphics::legend(leg.pos, vn, col = col, pch = 15)
+  } else {
+    if (is.null(las)) las <- 2
+    if (is.null(left.bar.skip)) left.bar.skip <- ncol(st)/4
+    if (is.null(mar)) mar <- c(3, 3, 0.2, 0.2)
+    grDevices::pdf(file = NULL) # To avoid plotting the preliminary version, especially in markdowns
+    b0 <- negBarPlot(st) # To get the limits
+    grDevices::dev.off()
+    cw <- b0[2] - b0[1] # Width of 1 column
+    xl <- c(-cw*left.bar.skip, max(b0) + cw/2)
+    withr::local_par(mfrow = c(3, 1), mar = mar)
+    negBarPlot(st, # ...,
+               xlim = xl, ylim = yl, col = col, las = las, main = "")
+    graphics::points(b0, sts, pch = 18, cex = 1.3, col = "#FFFFFF"); graphics::points(b0, sts, pch = 18)
+    graphics::legend("topright", "Short-run", bty = "n")
+    graphics::mtext(paste0(main, " (", dep.var.name, ")"), line = -1.25, font = 2)
+    negBarPlot(lt, # ...,
+               xlim = xl, ylim = yl, col = col, las = las, main = "")
+    graphics::points(b0, lts, pch = 16, cex = 1.3, col = "#FFFFFF"); graphics::points(b0, lts, pch = 16)
+    graphics::legend("topright", "Long-run", bty = "n")
+    negBarPlot(tot, # ...,
+               xlim = xl, ylim = yl, col = col, las = las, main = "")
+    graphics::points(b0, tots, pch = 15, cex = 1.3, col = "#FFFFFF"); graphics::points(b0, tots, pch = 15)
+    graphics::legend("topright", "Total", bty = "n")
+    withr::local_par(mfrow = c(1, 1), mar = mar, new = TRUE)
+    graphics::plot.new()
+    graphics::legend(leg.pos, vn, col = col, pch = 15)
+  }
+
+  return(invisible(NULL))
+}
+
+# TODO: add a wrapper for constrained estimation within a corridor
+

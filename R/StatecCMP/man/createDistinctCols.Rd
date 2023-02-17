@@ -7,9 +7,9 @@
 createDistinctCols(
   n = 4,
   nsamp = 200,
-  range1 = c(0, 0.7),
-  range2 = c(0.1, 0.9),
-  range3 = c(0.1, 0.9),
+  range1 = c(0, 0.5),
+  range2 = c(0.05, 0.95),
+  range3 = c(0.05, 0.95),
   norm = 2,
   reduce = min,
   bad.margin = 0.2,

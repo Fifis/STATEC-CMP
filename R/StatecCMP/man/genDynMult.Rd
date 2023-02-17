@@ -7,10 +7,11 @@
 genDynMult(
   endog.lag,
   exog.lag,
+  intercept = 0,
   h = 50,
   shock.amount = 1,
   xnames = NULL,
-  resid.name = "rest",
+  resid.name = "residual",
   plot = TRUE,
   yname = NULL,
   samescale = TRUE,
@@ -24,7 +25,9 @@ genDynMult(
 \arguments{
 \item{endog.lag}{A numeric vector of AR coefficients on Y[t-1], Y[t-1] etc.}
 
-\item{exog.lag}{A list (!) of vectors of DL coefficients on X[t], X[t-1] etc.}
+\item{exog.lag}{A list (!) of named vectors of DL coefficients on X[t], X[t-1] etc.}
+
+\item{intercept}{The value of the intercept in the model. It is not plotted.}
 
 \item{h}{An integer scalar: horizon at which to terminate the iterative procedure}
 
@@ -48,7 +51,14 @@ genDynMult(
 
 \item{francais}{Logical: if TRUE, the labels are in French.}
 
-\item{...}{Passed to all plot functions tha produce the plots.}
+\item{...}{Passed to all plot functions tha produce the plots.
+
+The generation of dynamic multipliers is carried out recursively. The list of exogenous
+lags should not include the intercept because the dynamic multipliers for the intercept
+are derived from the coefficients on the endogenous variables. Additionally, intercepts
+are not interpretable in terms of changes. Numerically,
+the dynamic multiplier for the intercept coincides with the multiplier on the
+error term times the value of the intercept.}
 }
 \value{
 A numeric matrix containing the dynamic multipliers for the requested number of periods (one period per line), starting with period 0 in the 1st line.
@@ -58,11 +68,12 @@ Dynamic multipliers for an ARDL model
 }
 \examples{
 rho <- 0.2
-dx <- c(x1 = 0.9, x2 = 0.2)
+dx <- c(x1 = 0.9, x2 = 0.2) # x2 is only in the short-run equation
 ECT <- -0.8
-lx <- c(x1 = -1.5, x2 = 0.5)
-ARDL.coef <- ECM2ARDL(dx.coef.list = dx, dy.coef.vec = rho, ECT = ECT, long.run = lx)
-dm <- genDynMult(endog.lag = ARDL.coef$AR, exog.lag = ARDL.coef$DL, add.legend = TRUE)
+lx <- c(x1 = -1.5, x3 = 0.5) # x3 is only in the long-run equation
+const <- 3
+b <- ECM2ARDL(dx.coef.list = dx, dy.coef.vec = rho, ECT = ECT, long.run = lx, intercept = const)
+dm <- genDynMult(endog.lag = b$AR, exog.lag = b$DL, intercept = 5, add.legend = TRUE)
 head(dm, 11)
 }
 \seealso{

@@ -2,12 +2,12 @@
 #'
 #' @param x A matrix that will be passed to \code{barplot}.
 #' @param main Plot title (used separately to prevent title duplication).
-#' @param xlim Passed to barplot.
-#' @param ylim Passed to barplot.
-#' @param width Passed to barplot.
-#' @param space Passed to barplot.
-#' @param panel.first Passed to plot.
-#' @param ... Passed to barplot.
+#' @param xlim Passed to `barplot()`.
+#' @param ylim Passed to `barplot()`.
+#' @param width Passed to `barplot()`.
+#' @param space Passed to `barplot()`.
+#' @param panel.first Passed to `plot()`.
+#' @param ... Passed to `barplot()`.
 #'
 #' @return Invisibly returns a list of two bar plots (for positive and negative values).
 #' @export

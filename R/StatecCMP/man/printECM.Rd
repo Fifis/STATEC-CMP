@@ -4,9 +4,9 @@
 \alias{getLR}
 \alias{printECM}
 \alias{getECM}
-\title{Print one or multiple ECMs in an easily interpretable format}
+\title{Extract the long-run elasticities from an OLS-estimated ECM}
 \usage{
-getLR(x, yname, xnames)
+getLR(x, yname, xnames, minus = TRUE)
 
 printECM(
   ...,
@@ -26,6 +26,7 @@ getECM(
   xnames,
   d.prefix,
   lag.prefix,
+  minus = TRUE,
   na.to.zero = FALSE,
   incorporate.intercept = FALSE
 )
@@ -36,6 +37,11 @@ getECM(
 \item{yname}{A string with the dependent variable name.}
 
 \item{xnames}{A character vector of explanatory variable names that appear in both parts and differ by prefixed. Unique variables (like time dummies) need not be included.}
+
+\item{minus}{Logical: multiply the OLS long-run estimates by -1?
+
+TODO: fix the internal getECM function because with incomplete SR/LR parts, the output is broken
+(see example below)}
 
 \item{...}{Estimated model outputs from lm, restriktor::restriktor or restriktor::conLM.}
 
@@ -49,8 +55,6 @@ getECM(
 
 \item{select}{A character vector showing which parts of the equation to keep for reporting.}
 
-\item{minus}{Logical: multiply the OLS long-run estimates by -1?}
-
 \item{na.to.zero}{If TRUE, replace NAs with zeros.}
 
 \item{incorporate.intercept}{If TRUE, report the intercept in the short-run part.}
@@ -59,12 +63,37 @@ getECM(
 Invisibly returns the matrices that have just been shown (without rounding).
 }
 \description{
+Extract the long-run elasticities from an OLS-estimated ECM
+
 Print one or multiple ECMs in an easily interpretable format
 }
 \section{Functions}{
 \itemize{
-\item \code{getLR()}: Extract the long-run elasticities
-
 \item \code{getECM()}: Internal function to sort ECM components
 
 }}
+\examples{
+# Imagine an error-correction model with 3 regressors, one of this is SR-only
+# and one is LR-only:
+# dY = 10 + 0.2*dY(-1) + 0.9*dX1 + 0.2*dX2 - 0.8(Y(-1) - 1.5*X1(-1) + 0.5*X3(-1)) + U
+# To simulate this DGP, we convert it to ARDL:
+b <- ECM2ARDL(dx.coef.list = c(X1=0.9, X2=0.2), dy.coef.vec = 0.2,
+              ECT = -0.8, long.run = c(X1=1.5, X3=-0.5), intercept = 5)
+d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, intercept = b$intercept, n = 50)
+plot(ts(d))
+# Preparing variables with nice names: lags, and differences
+yn <- "Y"
+xn <- c("X1", "X2", "X3")
+vn <- c(yn, xn)
+d[, paste0("lag1_", vn)] <- myLag(d[, vn])
+d[, paste0("d_", vn)] <- myDiff(d[, vn])
+d[, paste0("d_lag1_", vn)] <- myDiff(myLag(d[, vn]))
+# Model 1: full model with all regressors included
+m1 <- lm(d_Y ~ d_lag1_Y + d_X1 + d_X2 + d_X3 +
+         lag1_Y + lag1_X1 + lag1_X2 + lag1_X3, data = d)
+# Model 2: true model (should be more efficient)
+m2 <- lm(d_Y ~ d_lag1_Y + d_X1 + d_X2 + lag1_Y + lag1_X1 + lag1_X3, data = d)
+printECM(m2, yname = yn, xnames = xn, d.prefix = "d_", lag.prefix = "lag1_")
+printECM(m1, m2, yname = yn, xnames = xn,
+         d.prefix = "d_", lag.prefix = "lag1_")
+}

@@ -2273,6 +2273,7 @@ imputePanel7 <- function(x, trim = c(0.25, 0.25),
   return(res)
 }
 
+# TODO: forcing annual totals and setting the starting month
 # TODO: Do the cluster stuff
 # TODO: When a data frame is supplied, output to multiple files or increment the number
 # TODO: diagSeas: return (as diagnostics) the AICcS for log-transform and TD

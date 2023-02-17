@@ -221,7 +221,7 @@ plot(ts.union(y4sa$series[, "adjfac"], nwe - mean(nwe)),
      plot.type = "single", col = 2:1)
 
 # Quarterly data
-apsa <- diagnoseSeasonality(datasets::AirPassengers)
+apsa <- diagnoseSeasonality(aggregate(datasets::AirPassengers, nfreq = 4))
 summary(apsa$seas)
 
 # Long series without any seasonal effects

@@ -4,18 +4,31 @@
 \alias{simARDL}
 \title{Simulate an ARDL process}
 \usage{
-simARDL(endog.lag, exog.lag, intercept = 20, seed = 1, n = 300)
+simARDL(
+  endog.lag,
+  exog.lag,
+  intercept = 1,
+  x.drift = 0.01,
+  seed = 1,
+  n = 300,
+  burn.in = 10
+)
 }
 \arguments{
 \item{endog.lag}{Numeric: coefficients on the lags of Y}
 
 \item{exog.lag}{A list of coefficients on X and its lags}
 
-\item{intercept}{Numeric: shift for the entire series}
+\item{intercept}{Numeric: intercept in the equation}
+
+\item{x.drift}{Numeric scalar: regressor drift}
 
 \item{seed}{Integer: seed for PRNG}
 
 \item{n}{Number of observations}
+
+\item{burn.in}{Number of observations at the beginning of the sample to omit to ensure that
+the data generated are not affected as much by the initial conditions.}
 }
 \value{
 A data frame with the dependent variable, regressors, and errors
@@ -24,8 +37,10 @@ A data frame with the dependent variable, regressors, and errors
 Simulate an ARDL process
 }
 \examples{
-b <- list(AR = c(0.4, -0.2), DL = list(L0 = c(0.9, 0.2), L1 = c(0.3, 0.6)))
-d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, n = 40)
-d <- ts(d, start = c(2000, 1), freq = 4)
+b <- list(AR = c(0.4, -0.2), DL = list(c(0.9, 0.2), c(0.3, 0.6)))
+d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, n = 300)
+d <- ts(d, start = c(1990, 1), freq = 12)
 plot(d)
+lm(Y ~ myLag(Y) + myLag(Y, 2) + X1 + X2 + myLag(X1) + myLag(X2), data = d)
+# One can simulate this with different seeds and observe consistent estimates
 }

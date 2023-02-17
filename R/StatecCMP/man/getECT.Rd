@@ -15,11 +15,32 @@ getECT(x, yname, xnames, centre = TRUE, detrend = FALSE)
 
 \item{centre}{If TRUE, subtract the mean. Use for unrestricted constant.}
 
-\item{detrend}{If TRUE, subtract the linear trend Use for unrestricted trend}
+\item{detrend}{If TRUE, subtract the linear trend Use for unrestricted trend
+
+If the model was estimated in the 'restricted constant' or 'unrestricted constant'
+framework (cases 2 and 3 from Johansen (1995)), then, the error-correction term
+is mean-zero. Case 1 (non-zero-mean ECT) is rare in practice, and can be represented
+by setting `centre = FALSE`. Likewise, cases 4 and 5 (restricted and unrestricted trend)
+are handled via `detrend = TRUE`.}
 }
 \value{
 A numeric vector of long-run residuals (Y[t-1] - X[t-1]'b).
 }
 \description{
 Extract the error-correction term from an ECM
+}
+\examples{
+# Imagine an error-correction model:
+# dY = 10 + 0.2*dY(-1) + 0.9*dX1 + 0.2*dX2 - 0.8(Y(-1) - 1.5*X1(-1) + 0.5*X2(-1)) + U
+# To simulate this DGP, we convert it to ARDL:
+b <- ECM2ARDL(dx.coef.list = c(X1=0.9, X2=0.2), dy.coef.vec = 0.2,
+              ECT = -0.8, long.run = c(X1=1.5, X2=-0.5), intercept = 5)
+d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, intercept = b$intercept, n = 200)
+plot(ts(d))
+m <- lm(myDiff(Y) ~ myLag(myDiff(Y)) + myDiff(X1) + myDiff(X2) +
+        myLag(Y) + myLag(X1) + myLag(X2), data = d)
+yn <- "myLag(Y)"
+xn <- c("myLag(X1)", "myLag(X2)")
+getLR(m, yn, xn) # Show the LR elasticities
+plot(ts(getECT(m, yn, xn)), ylab = "LR resid.", bty = "n") # LR residual
 }

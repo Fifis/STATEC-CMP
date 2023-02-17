@@ -12,7 +12,7 @@ predictECM(
   lag.prefix = "lag1_",
   return.full.df = FALSE,
   linear.pred.name = "Xb",
-  resid.name = "resid"
+  resid.name = "residuals"
 )
 }
 \arguments{
@@ -23,7 +23,7 @@ Note that the dependent variable should be NA for the period for which the forec
 
 \item{yname}{A string with the dependent variable name.}
 
-\item{d.prefix}{A string that should precede every differenced variables (usually d_)}
+\item{d.prefix}{A string that should precede every differenced variables (usually "d_").}
 
 \item{lag.prefix}{A string that should to precede first lags.}
 
@@ -38,4 +38,32 @@ A list of forecast differences and levels of the same length as the number of mi
 }
 \description{
 Obtain forecasts for an ECM(1)
+}
+\examples{
+# Imagine an error-correction model:
+# dY = 10 + 0.2*dY(-1) + 0.9*dX1 + 0.2*dX2 - 0.8(Y(-1) - 1.5*X1(-1) + 0.5*X2(-1)) + U
+# To simulate this DGP, we convert it to ARDL:
+b <- ECM2ARDL(dx.coef.list = c(X1=0.9, X2=0.2), dy.coef.vec = 0.2,
+              ECT = -0.8, long.run = c(X1=1.5, X2=-0.5), intercept = 5)
+d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, intercept = b$intercept, n = 56)
+d$trueY <- d$Y
+d$trued_Y <- myDiff(d$trueY)
+d$Y[51:56] <- NA # The last 6 values are not observed
+plot(ts(d))
+# Preparing variables with nice names: lags, and differences
+yn <- "Y"
+xn <- c("X1", "X2")
+vn <- c(yn, xn)
+d[, paste0("lag1_", vn)] <- myLag(d[, vn])
+d[, paste0("d_", vn)] <- myDiff(d[, vn])
+d[, paste0("d_lag1_", vn)] <- myDiff(myLag(d[, vn]))
+m <- lm(d_Y ~ d_lag1_Y + d_X1 + d_X2 + lag1_Y + lag1_X2 + lag1_X2, data = d)
+y.fc <- predictECM(m, newdata = d[-1, ], yname = "Y")
+new.inds <- as.numeric(names(y.fc$difference))
+plot(ts(d$d_Y), main = "Forecast change rates")
+lines(new.inds, y.fc$difference, col = 2, lwd = 2)
+lines(new.inds, d$trued_Y[new.inds], lty = 2)
+plot(ts(d$Y), main = "Forecast levels")
+lines(new.inds, y.fc$level, col = 2, lwd = 2)
+lines(new.inds, d$trueY[new.inds], lty = 2)
 }

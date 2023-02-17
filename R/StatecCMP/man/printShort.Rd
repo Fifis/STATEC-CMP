@@ -11,11 +11,34 @@ printShort(x, hyp = NULL, digits = 3)
 
 \item{hyp}{Optional: human-readable hypothesis name}
 
-\item{digits}{Number of p-values digits to print.}
+\item{digits}{Number of p-value digits to print.
+
+This function is useful when many hypotheses need to be tested interactively or in a markdown
+file, and the output of `car::linearHypothesis()` is too bulky.}
 }
 \value{
-Nothing (invisible NULL).
+A named numeric vector of length 3: degrees of freedom, F statistic, p-value.
 }
 \description{
 Prints hypothesis testing results in a concise manner
+}
+\examples{
+m <- lm(mpg ~ factor(cyl) + disp + hp + wt + vs + gear, data = datasets::mtcars)
+hyp1 <- c("vs = gear")
+hyp2 <- c("disp = 0", "wt = -3", "vs = gear")
+vHC <- sandwich::vcovHC(m)
+htest1 <- car::linearHypothesis(m, hyp1, vcov. = vHC)
+htest2 <- car::linearHypothesis(m, hyp2, vcov. = vHC)
+print(htest1) # Long
+print(htest2)
+printShort(htest1, hyp = "equal effects")
+printShort(htest2, hyp = "empirically driven guesses")
+
+# Works with arbitrary test that return an 'htest' class
+# Suppose that we want to test the similarity of two distributions: mpg & hp
+plot(ecdf(scale(mtcars$mpg)), xlim = c(-3, 3)); par(new = TRUE)
+plot(ecdf(scale(mtcars$hp)), col = 2, main = "", xlim = c(-3, 3), ylab = "", xlab = "")
+htest3 <- ks.test(scale(mtcars$mpg), scale(mtcars$hp))
+print(htest3) # Long
+printShort(htest3, "mpg and hp have the same distribution (KS test)")
 }

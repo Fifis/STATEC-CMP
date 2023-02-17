@@ -8,10 +8,12 @@
 computePropag(
   endog.lag,
   exog.lag,
+  intercept = 0,
   data,
+  dep.var.name = NULL,
   xnames = NULL,
-  mult = 100,
-  resid.name = "reste",
+  mult = 1,
+  resid.name = "residual",
   francais = TRUE
 )
 
@@ -34,7 +36,12 @@ printContrib(
 
 \item{exog.lag}{Passed to [genDynMult()].}
 
-\item{data}{A data frame or matrix with with the regressors (in the order in which they appear in exog.lag) and residuals in the last column.}
+\item{intercept}{Passed to [genDynMult()].}
+
+\item{data}{A data frame or matrix with with the regressors (`colnames(d)` must have all the names of the `exog.lag` vectors).}
+
+\item{dep.var.name}{If not NULL, use this variable from `data` as the observed values to compute the residuals.
+Corresponds to the *level* of the variable (i.e. the ARDL dependent variable), not the difference.}
 
 \item{xnames}{Passed to [genDynMult()].}
 
@@ -42,7 +49,10 @@ printContrib(
 
 \item{resid.name}{A label how to denote the residuals.}
 
-\item{francais}{Logical: if TRUE, the column names will be in French.}
+\item{francais}{Logical: if TRUE, the column names will be in French.
+
+The argument `exog.lag` should be a list of named coefficient vectors. These names must
+exist as variables in the data set.}
 
 \item{x}{A list of matrices each of which was returned by computePropag}
 
@@ -74,16 +84,25 @@ Compute shock propagation and contributions with real data
 }
 \examples{
 # Imagine an error-correction model:
-# dY = 0.2*dY(-1) + 0.9*dX1 + 0.2*dX2 - 0.8(Y(-1) - 1.5*X1(-1) + 0.5*X2(-1)) + U
+# dY = 10 + 0.2*dY(-1) + 0.9*dX1 + 0.2*dX2 - 0.8(Y(-1) - 1.5*X1(-1) + 0.5*X3(-1)) + U
 # Its ARDL equivalent is
-# Y = 0.4*Y(-1) - 0.2*Y(-2) + 0.9*X1 + 0.2*X2 + 0.3*X1(-1) - 0.6*X2(-1) + U
-b <- list(AR = c(0.4, -0.2), DL = list(L0 = c(0.9, 0.2), L1 = c(0.3, 0.6)))
-d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, n = 40)
-prpg <- computePropag(endog.lag = b$AR, exog.lag = b$DL, data = d[, -1], mult = 1)
-prpg[[40]]
+# Y = 10 + 0.4*Y(-1) - 0.2*Y(-2) + 0.9*X1 + 0.2*X2 + 0.3*X1(-1) - 0.2*X2(-1) - 0.4*X3(-1) + U
+b <- ECM2ARDL(c(X1=0.9, X2=0.2), 0.2, -0.8, c(X1=1.5, X3=-0.5), intercept = 10)
+d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, intercept = 10, n = 100)
+lm(Y ~ myLag(Y) + myLag(Y, 2) + X1 + X2 + X3 +
+       myLag(X1) + myLag(X2) + myLag(X3), data = d)
+prpg <- computePropag(endog.lag = b$AR, exog.lag = b$DL, dep.var.name = "Y",
+                      data = d, mult = 100)
+prpg[[100]] # mult = 100 yields percentage points
+all.equal(sum(prpg[[100]][3, ] / 100), diff(d$Y)[99]) # The decomposition adds up
 contrib.matrices <- quiet(printContrib(prpg, sums = FALSE, type = "twocolumn"))
 contrib.total <- t(contrib.matrices$ST + contrib.matrices$LT)
-tail(contrib.total)
+round(tail(contrib.total), 1)
+ctotal <- rowSums(contrib.total / 100)
+plot(myDiff(d$Y), bty = "n", main = "Growth rates", type = "l", ylab = "", lwd = 3)
+lines(ctotal, col = 2)
+logScale <- function(x) {x <- log(abs(x), 10); x[is.nan(x)] <- 0; x}
+plot(logScale(myDiff(d$Y) - ctotal), bty = "n", main = "Discrepancy (log10)", type = "l")
 }
 \seealso{
 [genDynMult()] is the workhorse used to compute the dynamic multipliers

@@ -11,11 +11,40 @@ guessECM(mod, d.prefix = "^d_", lag.prefix = "^lag1?_")
 
 \item{d.prefix}{Character: a regex for identifying differenced variables.}
 
-\item{lag.prefix}{Character: a regex for identifying lagged variables.}
+\item{lag.prefix}{Character: a regex for identifying lagged variables.
+
+TODO: create a class for ECMs for easier prediction and estimation.
+So far, there are too many functions not using any meta-information.
+TODO: this can be achieved by merging getECM and printECM into a unified
+function that can handle models with different variables in the SR/LR parts.}
 }
 \value{
 A named list with separated ECM components (named vectors).
 }
 \description{
 Extract variable names automatically from an ECM
+}
+\examples{
+# Imagine an error-correction model with 3 regressors, one of this is SR-only
+# and one is LR-only:
+# dY = 10 + 0.2*dY(-1) + 0.9*dX1 + 0.2*dX2 - 0.8(Y(-1) - 1.5*X1(-1) + 0.5*X3(-1)) + U
+# To simulate this DGP, we convert it to ARDL:
+b <- ECM2ARDL(dx.coef.list = c(X1=0.9, X2=0.2), dy.coef.vec = 0.2,
+              ECT = -0.8, long.run = c(X1=1.5, X3=-0.5), intercept = 5)
+d <- simARDL(endog.lag = b$AR, exog.lag = b$DL, intercept = b$intercept, n = 50)
+plot(ts(d))
+# Preparing variables with nice names: lags, and differences
+yn <- "Y"
+xn <- c("X1", "X2", "X3")
+vn <- c(yn, xn)
+d[, paste0("lag1_", vn)] <- myLag(d[, vn])
+d[, paste0("d_", vn)] <- myDiff(d[, vn])
+d[, paste0("d_lag1_", vn)] <- myDiff(myLag(d[, vn]))
+# Model 1: full model with all regressors included
+m1 <- lm(d_Y ~ d_lag1_Y + d_X1 + d_X2 + d_X3 +
+         lag1_Y + lag1_X1 + lag1_X2 + lag1_X3, data = d)
+# Model 2: true model (should be more efficient)
+m2 <- lm(d_Y ~ d_lag1_Y + d_X1 + d_X2 + lag1_Y + lag1_X1 + lag1_X3, data = d)
+guessECM(m1)
+guessECM(m2)
 }

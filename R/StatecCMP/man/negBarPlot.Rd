@@ -18,19 +18,19 @@ negBarPlot(
 \arguments{
 \item{x}{A matrix that will be passed to \code{barplot}.}
 
-\item{xlim}{Passed to barplot.}
+\item{xlim}{Passed to `barplot()`.}
 
-\item{ylim}{Passed to barplot.}
+\item{ylim}{Passed to `barplot()`.}
 
 \item{main}{Plot title (used separately to prevent title duplication).}
 
-\item{width}{Passed to barplot.}
+\item{width}{Passed to `barplot()`.}
 
-\item{space}{Passed to barplot.}
+\item{space}{Passed to `barplot()`.}
 
-\item{panel.first}{Passed to plot.}
+\item{panel.first}{Passed to `plot()`.}
 
-\item{...}{Passed to barplot.}
+\item{...}{Passed to `barplot()`.}
 }
 \value{
 Invisibly returns a list of two bar plots (for positive and negative values).
