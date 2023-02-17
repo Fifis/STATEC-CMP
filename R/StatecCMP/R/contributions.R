@@ -7,6 +7,7 @@
 #' @param width Passed to `barplot()`.
 #' @param space Passed to `barplot()`.
 #' @param panel.first Passed to `plot()`.
+#' @param warn If `TRUE`, warns the user in case they are about to save graphical output to a device.
 #' @param ... Passed to `barplot()`.
 #'
 #' @return Invisibly returns a list of two bar plots (for positive and negative values).
@@ -17,7 +18,8 @@
 #' negBarPlot(matrix(rnorm(24), ncol = 6), col = rainbow(4, end = 0.7))
 negBarPlot <- function(x, xlim = NULL, ylim = NULL,
                        main = "Contribuiton breakdown", width = 1, space = 0.2,
-                       panel.first = NULL, ...) {
+                       panel.first = NULL, warn = TRUE, ...) {
+  if (warn) warning("If you are plotting to PNG or PDF on Windows from RStudio interactively,\nrun dev.off() because RStudio creates its own PNGs with devices not properly shut down!\nIf you are plotting to screen, disregard this warning.")
   pos <- neg <- x
   pos[pos < 0] <- 0
   neg[neg > 0] <- 0

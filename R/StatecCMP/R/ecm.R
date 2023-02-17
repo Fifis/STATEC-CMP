@@ -1682,12 +1682,12 @@ plotContribECM <- function(x, single.plot = TRUE, col = NULL,
     big.mat <- do.call(cbind, lapply(1:ncol(st), function(i) cbind(st[, i], lt[, i], tot[, i], NA)))
     big.mat <- big.mat[, -ncol(big.mat)]
     grDevices::pdf(file = NULL) # To avoid plotting the preliminary version, especially in markdowns
-    b0 <- negBarPlot(big.mat) # To get the limits
+    b0 <- negBarPlot(big.mat, warn = FALSE) # To get the limits
     grDevices::dev.off()
     cw <- b0[2] - b0[1] # Width of 1 column
     xl <- c(-cw*left.bar.skip, max(b0) + cw/2)
     withr::local_par(mar = mar)
-    b <- negBarPlot(big.mat, # ...,
+    b <- negBarPlot(big.mat, ...,
                     xlim = xl, ylim = yl, col = col, main = paste0(main, " (", dep.var.name, ")"))
     vpos <- apply(big.mat, 2, function(x) sum(x[x>0]))
     txt <- rep(c("S", "L", "T", ""), ncol(st))
@@ -1698,26 +1698,27 @@ plotContribECM <- function(x, single.plot = TRUE, col = NULL,
     graphics::points(b[which(txt == "T")], tots, pch = 15, cex = 1.3, col = "#FFFFFF"); graphics::points(b[which(txt == "T")], tots, pch = 15)
     if (!is.null(colnames(tot))) graphics::axis(1, at = b[which(txt == "L")], labels = colnames(tot), las = las)
     graphics::legend(leg.pos, vn, col = col, pch = 15)
+    graphics::legend(if (leg.pos == "bottomleft") "bottomright" else "bottomleft", c("S = Short-run", "L = Long-run", "T = Total"), cex = 0.8, bty = "n")
   } else {
     if (is.null(las)) las <- 2
     if (is.null(left.bar.skip)) left.bar.skip <- ncol(st)/4
     if (is.null(mar)) mar <- c(3, 3, 0.2, 0.2)
     grDevices::pdf(file = NULL) # To avoid plotting the preliminary version, especially in markdowns
-    b0 <- negBarPlot(st) # To get the limits
+    b0 <- negBarPlot(st, warn = FALSE) # To get the limits
     grDevices::dev.off()
     cw <- b0[2] - b0[1] # Width of 1 column
     xl <- c(-cw*left.bar.skip, max(b0) + cw/2)
     withr::local_par(mfrow = c(3, 1), mar = mar)
-    negBarPlot(st, # ...,
+    negBarPlot(st, ...,
                xlim = xl, ylim = yl, col = col, las = las, main = "")
     graphics::points(b0, sts, pch = 18, cex = 1.3, col = "#FFFFFF"); graphics::points(b0, sts, pch = 18)
     graphics::legend("topright", "Short-run", bty = "n")
     graphics::mtext(paste0(main, " (", dep.var.name, ")"), line = -1.25, font = 2)
-    negBarPlot(lt, # ...,
+    negBarPlot(lt, ...,
                xlim = xl, ylim = yl, col = col, las = las, main = "")
     graphics::points(b0, lts, pch = 16, cex = 1.3, col = "#FFFFFF"); graphics::points(b0, lts, pch = 16)
     graphics::legend("topright", "Long-run", bty = "n")
-    negBarPlot(tot, # ...,
+    negBarPlot(tot, ...,
                xlim = xl, ylim = yl, col = col, las = las, main = "")
     graphics::points(b0, tots, pch = 15, cex = 1.3, col = "#FFFFFF"); graphics::points(b0, tots, pch = 15)
     graphics::legend("topright", "Total", bty = "n")

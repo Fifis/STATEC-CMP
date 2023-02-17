@@ -12,6 +12,7 @@ negBarPlot(
   width = 1,
   space = 0.2,
   panel.first = NULL,
+  warn = TRUE,
   ...
 )
 }
@@ -29,6 +30,8 @@ negBarPlot(
 \item{space}{Passed to `barplot()`.}
 
 \item{panel.first}{Passed to `plot()`.}
+
+\item{warn}{If `TRUE`, warns the user in case they are about to save graphical output to a device.}
 
 \item{...}{Passed to `barplot()`.}
 }
