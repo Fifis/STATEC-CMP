@@ -3,18 +3,21 @@
 \name{getSAStat}
 \alias{getSAStat}
 \alias{getSAStatOne}
-\title{Get the crucial seasonal adjustment statistics}
+\title{Get the key seasonal adjustment statistics}
 \usage{
-getSAStat(x, skip.robustM7 = FALSE)
+getSAStat(x, skip.robustM7 = FALSE, sep = " ")
 
-getSAStatOne(x, skip.robustM7 = FALSE)
+getSAStatOne(x, skip.robustM7 = FALSE, sep = " ")
 }
 \arguments{
 \item{x}{An object of class [seasonal::seas], or a list of outputs from
 [seasonal::seas] or [diagnoseSeasonality()].}
 
-\item{skip.robustM7}{If TRUE, does not test the significance of seasonal abd
-year dummies with a consistent VCOV matrix. Saves 0.1 seconds in most cases
+\item{skip.robustM7}{If TRUE, does not test the significance of seasonal and
+year dummies with a consistent VCOV matrix. Saves 0.1 seconds in most cases}
+
+\item{sep}{A character used as a delimiter separating multiple outlier entries
+(is used as the `collapse` argument of `paste0()`)
 
 `getSAStat()` can be applied to a [seasonal::seas] object or to the output of
 [diagnoseSeasonality()] regardless of the number of models / classes.
@@ -28,7 +31,7 @@ A data frame with named values that are the most important for diagnostics
 and archiving.
 }
 \description{
-Get the crucial seasonal adjustment statistics
+Get the key seasonal adjustment statistics
 }
 \examples{
 xs1 <- seasonal::seas(AirPassengers, x11 = "")

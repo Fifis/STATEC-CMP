@@ -54,7 +54,7 @@ x1 <- AirPassengers
 x2 <- window(x1, start = c(1949, 12), end = c(1960, 1)) # With singular years
 sa1 <- seasonal::seas(x1, x11 = "")
 sa2 <- diagnoseSeasonality(x2)
-# getStat(list(sa1, sa2))
+# getSAStat(list(sa1, sa2))
 robustSeasTests(sa1)
 robustSeasTests(sa2$seas)
 }

@@ -17,6 +17,7 @@ diagnoseSeasonalityOne(
   easter = c("auto", "yes", "no"),
   forced.outliers = NULL,
   m7.threshold = 1,
+  force.annual = c("no", "regress", "denton"),
   sa.rule = c("robustM7", "M7", "averageM7", "yes", "no"),
   transform.aicdiff = -2,
   tradingdays.aicdiff = 0,
@@ -28,7 +29,7 @@ diagnoseSeasonalityOne(
 diagnoseSeasonality(
   x,
   calendar = NULL,
-  name = "Y",
+  name = NULL,
   bfcast.tails = FALSE,
   est.begin = NULL,
   est.end = NULL,
@@ -39,6 +40,7 @@ diagnoseSeasonality(
   leap.year = c("auto", "yes", "no"),
   easter = c("auto", "yes", "no"),
   forced.outliers = NULL,
+  force.annual = c("no", "regress", "denton"),
   m7.threshold = 1,
   sa.rule = c("robustM7", "M7", "averageM7", "yes", "no"),
   transform.aicdiff = -2,
@@ -84,6 +86,8 @@ TRUE translates to "log", FALSE translates to "none", NA or NULL to "auto".}
 \item{forced.outliers}{A character vector of ourlier dates and types in X13 format (e.g. `c("ao2010.1", "tc2020.3")`)}
 
 \item{m7.threshold}{Numeric between 0 and 3: the procedure will produce SA series if the M7 statistic is less than this threshold. A value of 3 means that adjustment is always done.}
+
+\item{force.annual}{A character indicating whether a correction of the SA series to add up to the annual totals should be made.}
 
 \item{sa.rule}{Character: what kind of indicator compare to `m7.threshold`.}
 

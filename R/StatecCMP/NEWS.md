@@ -1,3 +1,10 @@
+# StatecCMP 0.0.6 (2022-02-22)
+
+* Added support for forcing annual totals (regression or Denton)
+* Fixed a critical bug related to custom spans
+* Improved auto-naming of unnamed series based on calls
+* Replaced p-values with F statistics on plots; added Y axis to the seasonal-only plot
+
 # StatecCMP 0.0.5 (2022-02-17)
 
 * Reworked contribution functions (`ECM2ARDL()`, `computePropag()`): now they support arbitrary data sets, and compute the residuals automatically
