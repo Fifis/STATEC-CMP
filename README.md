@@ -19,6 +19,7 @@ These are the features / functions / changes that should be addressed before the
 
 ### Medium-priority
 
+* FEATURE: SA: save the time that it took to adjust the series (for comparabliity and reasonable time estimation; to be accessible by getSAStat).
 * FUNCTION: GENERIC: add `readAllSheets0` that would simply read all sheets from an Excel file
 * FEATURE: SA: fix sample shrinkage (do not trim away the original series when returning the results in `$series`)  
 `plot(a$series[ , c("original", "predicted")], plot.type = "single", lty = 1:2)`
@@ -37,6 +38,7 @@ These are the features / functions / changes that should be addressed before the
 
 ### Low-priority
 
+* FEATURE: SA: add a calendar for the Netherlands.
 * FEATURE: ECM: create a class for ECMs for easier prediction and estimation. So far, there are too many functions not using any meta-information and doing guess-work based on variable names.
 * FUNCTION: SA: re-implement the M statistics explicitly, visualise them
 * FEATURE: SA: detect trading-day peaks by looking at the neighbourhood at which the trading-day frequencies are the highest (or if they are lower, but not by much, i.e. 1%); remove those peaks and compare with the rest; are they the highest?
