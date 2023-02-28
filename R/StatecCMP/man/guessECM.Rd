@@ -11,12 +11,7 @@ guessECM(mod, d.prefix = "^d_", lag.prefix = "^lag1?_")
 
 \item{d.prefix}{Character: a regex for identifying differenced variables.}
 
-\item{lag.prefix}{Character: a regex for identifying lagged variables.
-
-TODO: create a class for ECMs for easier prediction and estimation.
-So far, there are too many functions not using any meta-information.
-TODO: this can be achieved by merging getECM and printECM into a unified
-function that can handle models with different variables in the SR/LR parts.}
+\item{lag.prefix}{Character: a regex for identifying lagged variables.}
 }
 \value{
 A named list with separated ECM components (named vectors).

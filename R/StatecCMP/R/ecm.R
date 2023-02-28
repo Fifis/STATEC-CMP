@@ -1004,19 +1004,22 @@ getECM <- function(x, yname, xnames, d.prefix, lag.prefix, minus = TRUE,
 #' @return A data frame with the lags and differences
 #'
 #' @examples
-#' d <- cbind(X1 = rnorm(100), X2 = cumsum(rnorm(100)))
-#' prepareTransform("X2", d)
+#' set.seed(1)
+#' d <- cbind(cX1 = cumsum(rnorm(9)), cX2 = cumsum(rnorm(9)), cX3 = cumsum(rnorm(9)))
+#' d <- round(d, 2)
+#' prepareTransform("cX1", d)
+#' prepareTransform(c("cX1", "cX2"), d)
 prepareTransform <- function(varnames, data, max.lag = 2) {
   if (any(max.lag < 1) | length(max.lag) != 1 | any(abs(max.lag - round(max.lag)) > .Machine$double.eps)) stop("prepareTransform: 'max.lag' must be an integer >= 1.")
-  ret <- lapply(max.lag, function(v) {
+  ret <- lapply(varnames, function(v) {
     x <- data[, v]
-    lx <- sapply(0:nlag, function(i) myLag(x, lag = i))
-    colnames(lx) <- c(v, paste0("lag", 1:nlag, "_", v))
+    lx <- sapply(0:max.lag, function(i) myLag(x, lag = i))
+    colnames(lx) <- c(v, paste0("lag", 1:max.lag, "_", v))
     dx <- apply(lx[, -ncol(lx), drop = FALSE], 2, myDiff)
-    colnames(dx) <- paste0("d_", colnames(lx))
+    colnames(dx) <- paste0("d_", colnames(lx)[-ncol(lx)])
     return(cbind(lx[, -1, drop = FALSE], dx))
   })
-
+  do.call(cbind, ret)
 }
 
 #' Perform Adaptive Elastic Net with optimal adaptive weights

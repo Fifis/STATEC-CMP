@@ -14,8 +14,6 @@ These are the features / functions / changes that should be addressed before the
 * FEATURE: SA: `diagnoseSeasonality()`: with mts, try-catch the errors, return, the good results, and report what went wrong
 * FEATURE: SA: `getStat()`: add positivity/negativity of adj. check
 * DOCUMENTATION: SA: example with outlier and missed level shift
-* DOCUMENTATION: SA: example with a constant series (no variability) and fail-safe
-* DOCUMENTATION: SA: example with a chaotic series (e.g. data entry error, using 10^6 units and then, not) and fail-safe
 * DOCUMENTATION: SA: example with custom chunks ending with c(NA, NA) lookup to take whatever the last date is
 * TEST: SA: "S:/Projets/Conjoncture EPR/SEAS_ADJ/3_Branches/Secteur financier/Nouveaux crédits_cvs.xls"
 
@@ -35,9 +33,10 @@ These are the features / functions / changes that should be addressed before the
 * VISUAL: SA: show estimation samples as brackets in plots
 * CHANGE: ECM: merge getECM and printECM into a unified function that can handle models with different variables in the SR/LR parts.
 * FEATURE: ECM: add a wrapper for constrained estimation within a corridor (for linear models and ECMs; the latter require the most care about the long-run part)
+* FEATURE: SA: check the number of auto-detected outlier regressors; use a reasonable rule of thumb (i.e. 1 per year) to warn if there are too many.
 
 ### Low-priority
 
-* FEATURE: SA: enable parallel functionality
 * FEATURE: ECM: create a class for ECMs for easier prediction and estimation. So far, there are too many functions not using any meta-information and doing guess-work based on variable names.
 * FUNCTION: SA: re-implement the M statistics explicitly, visualise them
+* FEATURE: SA: detect trading-day peaks by looking at the neighbourhood at which the trading-day frequencies are the highest (or if they are lower, but not by much, i.e. 1%); remove those peaks and compare with the rest; are they the highest?

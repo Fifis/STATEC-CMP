@@ -2,24 +2,30 @@
 % Please edit documentation in R/ecm.R
 \name{prepareTransform}
 \alias{prepareTransform}
-\title{Compute lags and differences of a variable for an ECM}
+\title{Compute lags and differences of variables for ECMs}
 \usage{
-prepareTransform(varname, data, nlag = 2)
+prepareTransform(varnames, data, max.lag = 2)
 }
 \arguments{
-\item{varname}{Character: variable name}
+\item{varnames}{Character vector: variable names to transform}
 
 \item{data}{Data frame where this variable can be found}
 
-\item{nlag}{Number of lags to compute}
+\item{max.lag}{Number of the maximum lag to compute
+
+If `nlag = 2`, then, the maximum lagged term is `[t-2]`, which for a variable `Y`
+would create `d_Y` (`= Y[t] - Y[t-1]`), `d_lag1_Y`, `lag1_Y`, and `lag2_Y`.}
 }
 \value{
 A data frame with the lags and differences
 }
 \description{
-Compute lags and differences of a variable for an ECM
+Compute lags and differences of variables for ECMs
 }
 \examples{
-d <- cbind(X1 = rnorm(100), X2 = cumsum(rnorm(100)))
-prepareTransform("X2", d)
+set.seed(1)
+d <- cbind(cX1 = cumsum(rnorm(9)), cX2 = cumsum(rnorm(9)), cX3 = cumsum(rnorm(9)))
+d <- round(d, 2)
+prepareTransform("cX1", d)
+prepareTransform(c("cX1", "cX2"), d)
 }

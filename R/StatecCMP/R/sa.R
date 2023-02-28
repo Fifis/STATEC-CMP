@@ -814,32 +814,37 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
     ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
     if (is.null(ret)) {
       dlist$estimate.maxiter <- 20000
-      warning("Estimation did not converge -- increasing maxiter from 5,000 to 20,000.")
+      message(paste0("SA of ", name, " not converged -- increasing maxiter from 5,000 to 20,000."))
       ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
     }
     if (is.null(ret)) {
       dlist$estimate.tol <- 1e-6
-      warning("Estimation did not converge -- relaxing the tolerance from 1e-7 to 1e-6.")
+      message(paste0("SA of ", name, " not converged -- relaxing the tolerance from 1e-7 to 1e-6."))
       ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
     }
     if (is.null(ret)) {
       dlist$estimate.tol <- 1e-5
-      warning("Estimation did not converge -- relaxing the tolerance from 1e-6 to 1e-5.")
+      message(paste0("SA of ", name, " not converged -- relaxing the tolerance from 1e-6 to 1e-5."))
       ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
     }
     if (is.null(ret)) {
       dlist$estimate.tol <- 1e-4
-      warning("Estimation did not converge -- relaxing the tolerance from 1e-5 to 1e-4.")
+      message(paste0("SA of ", name, " not converged -- relaxing the tolerance from 1e-5 to 1e-4."))
       ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
     }
     if (is.null(ret)) {
       dlist$outlier.types = c("ao", "ls")
-      warning("Estimation did not converge -- disallowing auto-detection of TC outliers.")
+      message(paste0("SA of ", name, " not converged -- disallowing auto-detection of TC outliers."))
+      ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    }
+    if (is.null(ret)) {
+      dlist$outlier.types = "ao"
+      message(paste0("SA of ", name, " not converged -- disallowing LS outliers (only AO left)."))
       ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
     }
     if (is.null(ret)) {
       dlist$automdl.maxorder = c(2, 1)
-      warning("Estimation did not converge -- reducing the maximum order from (3 1) to (2 1).")
+      message(paste0("SA of ", name, " not converged -- reducing the maximum order from (3 1) to (2 1)."))
       ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
     }
     return(ret)
@@ -952,32 +957,37 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
     ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
     if (is.null(ret)) {
       dlist$estimate.maxiter <- 20000
-      warning("Estimation did not converge -- increasing maxiter from 5,000 to 20,000.")
+      message(paste0("SA of ", name, " not converged -- increasing maxiter from 5,000 to 20,000."))
       ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
     }
     if (is.null(ret)) {
       dlist$estimate.tol <- 1e-6
-      warning("Estimation did not converge -- relaxing the tolerance from 1e-7 to 1e-6.")
+      message(paste0("SA of ", name, " not converged -- relaxing the tolerance from 1e-7 to 1e-6."))
       ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
     }
     if (is.null(ret)) {
       dlist$estimate.tol <- 1e-5
-      warning("Estimation did not converge -- relaxing the tolerance from 1e-6 to 1e-5.")
+      message(paste0("SA of ", name, " not converged -- relaxing the tolerance from 1e-6 to 1e-5."))
       ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
     }
     if (is.null(ret)) {
       dlist$estimate.tol <- 1e-4
-      warning("Estimation did not converge -- relaxing the tolerance from 1e-5 to 1e-4.")
+      message(paste0("SA of ", name, " not converged -- relaxing the tolerance from 1e-5 to 1e-4."))
       ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
     }
     if (is.null(ret)) {
       dlist$outlier.types = c("ao", "ls")
-      warning("Estimation did not converge -- disallowing auto-detection of TC outliers.")
+      message(paste0("SA of ", name, " not converged -- disallowing auto-detection of TC outliers."))
+      ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
+    }
+    if (is.null(ret)) {
+      dlist$outlier.types = "ao"
+      message(paste0("SA of ", name, " not converged -- disallowing LS outliers (only AO left)."))
       ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
     }
     if (is.null(ret)) {
       dlist$automdl.maxorder = c(2, 1)
-      warning("Estimation did not converge -- reducing the maximum order from (3 1) to (2 1).")
+      message(paste0("SA of ", name, " not converged -- reducing the maximum order from (3 1) to (2 1)."))
       ret <- tryCatch(seasonal::seas(list = dlist), error = .efv)
     }
     return(ret)
@@ -1052,8 +1062,10 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
     names(aiccs) <- c("td", "wd", "nd")
     if (any(is.finite(aiccs))) { # At least one model was estimated in overall
       best.type <- "nd" # Start with the most parsimonious one
-      if (aiccs["wd"] - aiccs["nd"] < tradingdays.aicdiff) best.type <- "wd"
-      if ((aiccs["td"] - aiccs[best.type]) < tradingdays.aicdiff) best.type <- "td"
+      # If ND is unavailable or (WD is better and the comparison makes sense), choose WD
+      if (isTRUE(aiccs["wd"] - aiccs["nd"] < tradingdays.aicdiff) | !is.finite(aiccs["nd"])) best.type <- "wd"
+      # If the new.best is unavailable or (new.best is better and the comparison makes sense), choose TD
+      if (isTRUE(aiccs["td"] - aiccs[best.type] < tradingdays.aicdiff) | !is.finite(aiccs[best.type])) best.type <- "td"
       if (verbose > 0) switch(best.type, td = cat("*** The week-day effects (6 TD) are different and important.\n"),
                               wd = cat("*** The number of week days (1 TD) is important.\n"), nd = cat("*** The week-day effect is absent in these series (0 TD).\n"))
       a.sel <- switch(best.type, td = a.td, wd = a.wd, nd = a.nd)
@@ -1363,6 +1375,9 @@ diagnoseRevisions <- function(old, new, nspans = NA, overlap.length = NA) {
 #' losing the accessible quality statistics for the last sample and adding the extra
 #' measurements of how different the revised adjusted values are.
 #'
+#' For plotting and parallel processing, it is recommended to adjust all the series
+#' first, and then, produce the plots based on the SA objects.
+#'
 #' @return A list:
 #' * `seasonality`: a logical indicating whether there is either seasonal or calendar effects
 #' * `multiplicative`: a logical indicating whether the adjustment model is multiplicative
@@ -1507,6 +1522,20 @@ diagnoseRevisions <- function(old, new, nspans = NA, overlap.length = NA) {
 #'                           custom.blend.starts = list(c(1953, 7)),
 #'                           custom.blend.ends   = list(c(1953, 12))
 #'                           )
+#'
+#' # Ill-behaved series that X13 cannot digest (failure guaranteed)
+#' set.seed(1)
+#' # 1. Just a constant
+#' bad.series1 <- rep(100, 100)
+#' # 2. Piecewise linear series (e.g. VAT data look like this)
+#' bad.series2 <- c(rep(100, 90), 50, rep(125, 9))
+#' # 3. A series was measured in millions at first, in original units later
+#' bad.series3 <- rnorm(100) * c(rep(1, 50), rep(10^6, 50))
+#' bad.series <- ts(cbind(bad.series1, bad.series2, bad.series3),
+#'                  start = c(2001, 1), frequency = 12)
+#' plot(bad.series)
+#' a.bad <- diagnoseSeasonality(bad.series) # Series 3 takes 5 minutes
+
 diagnoseSeasonality <- function(x, calendar = NULL, name = NULL,
                                 bfcast.tails = FALSE,
                                 est.begin = NULL, est.end = NULL,
@@ -1840,21 +1869,29 @@ diagnoseSeasonality <- function(x, calendar = NULL, name = NULL,
     return(out)
   }
 
-  # If there are multiple time series, process them in parallel
+  # If there are multiple time series, process them as a list
   if ("mts" %in% class(x)) {
     k <- ncol(x)
     x.list <- lapply(1:k, function(i) x[, i])
     x.names <- colnames(x)
     if (is.null(x.names)) x.names <- paste0("Column", 1:ncol(x))
 
-    # Create room for cluster here
-    ret <- lapply(1:k, function(i) diagSeasChunks(x.list[[i]], name = x.names[i],
-                            est.begin = est.begin, est.end = est.end,
-                            custom.est.starts = custom.est.starts, custom.est.ends = custom.est.ends,
-                            custom.blend.starts = custom.blend.starts, custom.blend.ends = custom.blend.ends,
-                            bcast.begin = bcast.begin, fcast.end = fcast.end,
-                            bfcast.tails = bfcast.tails, plot.file = plot.file))
-    # The names are more important than the call, and they will be used in getSAStat
+    # A function for one series
+    dSCi <- function(i) diagSeasChunks(x.list[[i]], name = x.names[i], # The names are more important than the call, and they will be used in getSAStat
+                                       est.begin = est.begin, est.end = est.end,
+                                       custom.est.starts = custom.est.starts, custom.est.ends = custom.est.ends,
+                                       custom.blend.starts = custom.blend.starts, custom.blend.ends = custom.blend.ends,
+                                       bcast.begin = bcast.begin, fcast.end = fcast.end,
+                                       bfcast.tails = bfcast.tails, plot.file = plot.file)
+
+    if (parallel & mc.cores > 1) {
+      cl <- if (.Platform$OS.type != "windows") parallel::makeForkCluster(mc.cores) else parallel::makeCluster(mc.cores)
+      ret <- parallel::parLapplyLB(cl = cl, X = 1:k, dSCi)
+      parallel::stopCluster(cl)
+    } else {
+      ret <- lapply(1:k, dSCi)
+    }
+
   } else { # x is 1-dimensional
     cl <- match.call()
     if (is.null(name)) name <- deparse(as.list(cl)$x)

@@ -1,16 +1,21 @@
-# StatecCMP 0.0.6 (2022-02-22)
+# StatecCMP 0.0.6.2 (2023-02-28)
+
+* Added parallel support for `diagnoseSeasonality()` to speed up adjustment of multiple series.
+* Fixed a bug related to AIC comparison when some models would fail to converge.
+
+# StatecCMP 0.0.6 (2023-02-22)
 
 * Added support for forcing annual totals (regression or Denton)
 * Fixed a critical bug related to custom spans
 * Improved auto-naming of unnamed series based on calls
 * Replaced p-values with F statistics on plots; added Y axis to the seasonal-only plot
 
-# StatecCMP 0.0.5 (2022-02-17)
+# StatecCMP 0.0.5 (2023-02-17)
 
 * Reworked contribution functions (`ECM2ARDL()`, `computePropag()`): now they support arbitrary data sets, and compute the residuals automatically
 * New function `plotContributionsECM()` to plot ECM contributions conveniently with a breakdown into short-run and long-run ones.
 
-# StatecCMP 0.0.4 (2022-02-07)
+# StatecCMP 0.0.4 (2023-02-07)
 
 * Bundled 4 national calendars as package data, removed the `getCalendars()` function to read them from the network drive.
 * Added support for string calendars (e.g. `diagnoseSeasonality(..., calendar = "Luxembourg")`) for Belgium, France, Luxembourg, and Germany.

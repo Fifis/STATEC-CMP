@@ -38,10 +38,7 @@ getECM(
 
 \item{xnames}{A character vector of explanatory variable names that appear in both parts and differ by prefixed. Unique variables (like time dummies) need not be included.}
 
-\item{minus}{Logical: multiply the OLS long-run estimates by -1?
-
-TODO: fix the internal getECM function because with incomplete SR/LR parts, the output is broken
-(see example below)}
+\item{minus}{Logical: multiply the OLS long-run estimates by -1?}
 
 \item{...}{Estimated model outputs from lm, restriktor::restriktor or restriktor::conLM.}
 

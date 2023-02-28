@@ -43,10 +43,12 @@ An improved seasonal plot with extra useful information
 }
 \examples{
 x <- diagnoseSeasonality(AirPassengers, transform = FALSE, td = 0,
-                         easter = TRUE, leap.year = TRUE,
-                         name = "Airline passengers")
+        easter = TRUE, leap.year = TRUE, plot = NA)
+x.force <- diagnoseSeasonality(AirPassengers, transform = FALSE, td = 0,
+             easter = TRUE, leap.year = TRUE, plot = NA, force.annual = "regress")
 x.alt <- seasonal::seas(AirPassengers, x11 = "")
 plotSeas(x)
+plotSeas(x.force)
 plotSeas(x, sa.custom = x.alt$series$d11, skip.boxplot = TRUE)
 # Multiple spans
 xm <- diagnoseSeasonality(AirPassengers, max.length = 5, transform = "yes")

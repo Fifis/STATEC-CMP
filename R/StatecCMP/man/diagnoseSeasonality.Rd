@@ -18,7 +18,7 @@ diagnoseSeasonalityOne(
   forced.outliers = NULL,
   m7.threshold = 1,
   force.annual = c("no", "regress", "denton"),
-  sa.rule = c("robustM7", "M7", "averageM7", "yes", "no"),
+  sa.rule = c("yes", "robustM7", "M7", "averageM7", "no"),
   transform.aicdiff = -2,
   tradingdays.aicdiff = 0,
   plot.file = NULL,
@@ -298,4 +298,17 @@ a3 <- diagnoseSeasonality(AirPassengers, transform = "yes", td = 1,
                           custom.blend.starts = list(c(1953, 7)),
                           custom.blend.ends   = list(c(1953, 12))
                           )
+
+# Ill-behaved series that X13 cannot digest (failure guaranteed)
+set.seed(1)
+# 1. Just a constant
+bad.series1 <- rep(100, 100)
+# 2. Piecewise linear series (e.g. VAT data look like this)
+bad.series2 <- c(rep(100, 90), 50, rep(125, 9))
+# 3. A series was measured in millions at first, in original units later
+bad.series3 <- rnorm(100) * c(rep(1, 50), rep(10^6, 50))
+bad.series <- ts(cbind(bad.series1, bad.series2, bad.series3),
+                 start = c(2001, 1), frequency = 12)
+plot(bad.series)
+a.bad <- diagnoseSeasonality(bad.series) # Series 3 takes 5 minutes
 }
