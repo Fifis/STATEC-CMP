@@ -9,7 +9,7 @@
 #' The first part of the name is the country, the second denotes frequency (monthly or quarterly).
 #'
 #' The source JD+ file is data-raw/All-National-Calendars-JDemetra.cfgx. It
-#' requires a working
+#' requires a working installation of JDemetra+ 2.2.3 or higher.
 #'
 #' @name calendars
 #' @keywords datasets

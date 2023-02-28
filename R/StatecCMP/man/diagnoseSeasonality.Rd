@@ -149,7 +149,10 @@ one adjustment if the series are univariate and short, and multiple adjustments
 otherwise: for east series, if it is shorter than `max.length`, apply `diagnoseSeasonalityOne`,
 or split it into chunks, adjust the chunk, and cleverly glue them back without
 losing the accessible quality statistics for the last sample and adding the extra
-measurements of how different the revised adjusted values are.}
+measurements of how different the revised adjusted values are.
+
+For plotting and parallel processing, it is recommended to adjust all the series
+first, and then, produce the plots based on the SA objects.}
 }
 \value{
 A list:

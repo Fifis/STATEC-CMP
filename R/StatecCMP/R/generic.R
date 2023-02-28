@@ -70,6 +70,8 @@ myDiff <- function(x, lag = 1L, order = 1L) {
 #' @param adjust A small numeric that will be added to the decimal time (should be less than 1 / 366 / 2)
 #' @param numeric If TRUE, convert to a real numeric vector instead of a ts.
 #'
+#' `myYear()` safely converts a `ts` into integer year by using `myTime()` internally.
+#'
 #' @return An object of the same dimensions as the input.
 #' @export
 #'
@@ -87,7 +89,7 @@ myTime <- function(x, adjust = getOption("ts.eps"), numeric = FALSE) {
   if (numeric) ret <- as.numeric(ret)
   return(ret)
 }
-#' @describeIn myTime Safely convert a ts into integer year
+#' @rdname myTime
 myYear <- function(x, adjust = getOption("ts.eps"), numeric = TRUE) {
   ret <- floor(myTime(x, adjust = adjust, numeric = FALSE))
   if (numeric) ret <- as.integer(ret)
@@ -100,7 +102,7 @@ myYear <- function(x, adjust = getOption("ts.eps"), numeric = TRUE) {
 #'
 #' https://stackoverflow.com/a/54136863
 #'
-#' @return The same result as evaluated by x, only with no output (sinked into tempfile()).
+#' @return The same result as evaluated by x, only with no output (`sink`ed into `tempfile()`).
 #' @export
 #'
 #' @examples

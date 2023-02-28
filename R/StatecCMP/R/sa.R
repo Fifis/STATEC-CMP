@@ -1535,7 +1535,6 @@ diagnoseRevisions <- function(old, new, nspans = NA, overlap.length = NA) {
 #'                  start = c(2001, 1), frequency = 12)
 #' plot(bad.series)
 #' a.bad <- diagnoseSeasonality(bad.series) # Series 3 takes 5 minutes
-
 diagnoseSeasonality <- function(x, calendar = NULL, name = NULL,
                                 bfcast.tails = FALSE,
                                 est.begin = NULL, est.end = NULL,
@@ -1992,6 +1991,7 @@ splitOverlapFixed <- function(n, nmax, l, plot = FALSE) {
 }
 
 #' @rdname splitOverlapFixed
+#' @export
 splitOverlapCustom <- function(n, est.starts, est.ends,
                                blend.starts = NULL, blend.ends = NULL, plot = FALSE) {
   p <- length(est.starts)
@@ -2196,6 +2196,7 @@ imputeTS5 <- function(x, robust.weights = NULL, calendar = NULL,
 }
 
 #' @rdname imputeTS5
+#' @export
 imputeMTS5 <- function(x,
                        robust.weights = NULL, calendar = NULL,
                        sample.begin = NULL, sample.end = NULL,
@@ -2237,6 +2238,7 @@ imputeMTS5 <- function(x,
 }
 
 #' @rdname imputeTS5
+#' @export
 imputePanel7 <- function(x, trim = c(0.25, 0.25),
                        robust.weights = NULL, calendar = NULL,
                        sample.begin = NULL, sample.end = NULL,
