@@ -642,7 +642,7 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
                                  forced.outliers = NULL,
                                  m7.threshold = 1,
                                  force.annual = c("no", "regress", "denton"),
-                                 sa.rule = c("robustM7", "M7", "averageM7", "yes", "no"),
+                                 sa.rule = c("yes", "robustM7", "M7", "averageM7", "no"),
                                  transform.aicdiff = -2, tradingdays.aicdiff = 0,
                                  plot.file = NULL, skip.boxplot = FALSE,
                                  verbose = 2
@@ -913,7 +913,9 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
         eff.len <- unname(sapply(log.mod.list, function(x) if (!is.null(x)) as.numeric(x[["udg"]]["nefobs"]) else 1))
         # Adjusting the AICc based on the number of observations
         aiccs <- aiccs / eff.len * n
-        trans.fun <- if (aiccs["nolog"] - aiccs["log"] < transform.aicdiff) "none" else "log"
+        if (any(is.finite(aiccs))) { # At least one model was estimated in overall
+          trans.fun <- if (aiccs["nolog"] - aiccs["log"] < transform.aicdiff) "none" else "log"
+        } else trans.fun <- "none" # Just a plug because nothing was estimated
       }
     }
     a.td <- if (trans.fun == "log") a.td.log else a.td.nolog
@@ -2350,43 +2352,3 @@ imputePanel7 <- function(x, trim = c(0.25, 0.25),
   return(res)
 }
 
-# TODO: fix sample shrinkage (do not trim away the original): #' plot(yfc$series[ , c("original", "predicted")], plot.type = "single", lty = 1:2)
-# TODO: add label to plots if forced
-# TODO: Do the cluster stuff
-# TODO: plot the non-forced annual on the plot is SAA is there
-# TODO: When a data frame is supplied, output to multiple files or increment the number
-# TODO: diagSeas: return (as diagnostics) the AICcS for log-transform and TD
-# TODO: Return udg aictest.diff.Leap Year, aictest.diff.e (+ print in verbose = 1)
-# TODO: a function to visualise existing black-box inputs and outputs (and do at least some rudimentary M7)
-# TODO: plotSeas: if one model is MULT and another is ADD, plot differently (recompute the mult.)
-# TODO: write a function that would SA the series in parallel
-# TODO: with mts, plot to different files, or accept vectors of names
-# TODO: with mts, try-catch and report what went wrong
-# TODO: diagnose robust M7 with all the series; there was a failure to invert something
-# TODO: add positivity/negativity of adj. check for archival
-# TODO: add QS, Shapiro-Wilk
-# TODO: chunks with internal NAs example
-# TODO: getSAStat should return names if it gets a list; diagnoseSeas should return a named list for an mts
-# TODO: produce aggregate full-sample M and Q for series with spans
-# TODO: example with outlier and missed level shift
-# TODO: example with a constant, example with a chaotic series
-# TODO: show estimation samples as brackets in plots
-# TODO: example of Gabriel, outlier regressors used in testing: why is 2021.2 skipped?
-# TODO: example with custom chunks ending with c(NA, NA) lookup to take whatever the last date is
-# TODO: test case: "S:/Projets/Conjoncture EPR/SEAS_ADJ/3_Branches/Secteur financier/Nouveaux crédits_cvs.xls"
-
-# u <- a.sel$udg
-# u[grep("q", names(u))]
-# s <- seasonal::qs(x)
-# r <- psp95lu$seas$series$rsd
-# m  <- lm(r ~ myLag(r) + myLag(r, 2))
-# summary(m)
-# q2 <- tryCatch(lmtest::waldtest(m, vcov = .vHAC), error = function(e) {
-#   print(e)
-#   lmtest::waldtest(m)
-# })
-# q2$`Pr(>F)`[2]
-# u[grep("spec", names(u))]
-# u[grep("peak", names(u))]
-# u[1:20 + 180]
-# s[c("qsrsd", "qsorievadj", "qssadjevadj", "qsirrevadj"), "p-val"]

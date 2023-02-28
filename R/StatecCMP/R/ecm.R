@@ -824,9 +824,6 @@ getLR <- function(x, yname, xnames, minus = TRUE) {
 #' @param select A character vector showing which parts of the equation to keep for reporting.
 #' @param minus Logical: multiply the OLS long-run estimates by -1?
 #'
-#' TODO: fix the internal getECM function because with incomplete SR/LR parts, the output is broken
-#' (see example below)
-#'
 #' @return Invisibly returns the matrices that have just been shown (without rounding).
 #' @export
 #'
@@ -940,6 +937,7 @@ printECM <- function(..., yname, xnames,
 #' @export
 getECM <- function(x, yname, xnames, d.prefix, lag.prefix, minus = TRUE,
                    na.to.zero = FALSE, incorporate.intercept = FALSE) {
+  browser()
   b <- if (is.numeric(x)) x else stats::coef(x)
   xnames <- unique(xnames) # Safety check to ensure that setdiff() worke properly
 
@@ -994,24 +992,31 @@ getECM <- function(x, yname, xnames, d.prefix, lag.prefix, minus = TRUE,
   return(ret)
 }
 
-#' Compute lags and differences of a variable for an ECM
+#' Compute lags and differences of variables for ECMs
 #'
-#' @param varname Character: variable name
+#' @param varnames Character vector: variable names to transform
 #' @param data Data frame where this variable can be found
-#' @param nlag Number of lags to compute
+#' @param max.lag Number of the maximum lag to compute
+#'
+#' If `nlag = 2`, then, the maximum lagged term is `[t-2]`, which for a variable `Y`
+#' would create `d_Y` (`= Y[t] - Y[t-1]`), `d_lag1_Y`, `lag1_Y`, and `lag2_Y`.
 #'
 #' @return A data frame with the lags and differences
 #'
 #' @examples
 #' d <- cbind(X1 = rnorm(100), X2 = cumsum(rnorm(100)))
 #' prepareTransform("X2", d)
-prepareTransform <- function(varname, data, nlag = 2) {
-  x <- data[, varname]
-  lx <- sapply(0:nlag, function(i) myLag(x, lag = i))
-  colnames(lx) <- c(varname, paste0("lag", 1:nlag, "_", varname))
-  dx <- apply(lx, 2, myDiff)
-  colnames(dx) <- paste0("d_", colnames(lx))
-  return(cbind(lx[, -1, drop = FALSE], dx))
+prepareTransform <- function(varnames, data, max.lag = 2) {
+  if (any(max.lag < 1) | length(max.lag) != 1 | any(abs(max.lag - round(max.lag)) > .Machine$double.eps)) stop("prepareTransform: 'max.lag' must be an integer >= 1.")
+  ret <- lapply(max.lag, function(v) {
+    x <- data[, v]
+    lx <- sapply(0:nlag, function(i) myLag(x, lag = i))
+    colnames(lx) <- c(v, paste0("lag", 1:nlag, "_", v))
+    dx <- apply(lx[, -ncol(lx), drop = FALSE], 2, myDiff)
+    colnames(dx) <- paste0("d_", colnames(lx))
+    return(cbind(lx[, -1, drop = FALSE], dx))
+  })
+
 }
 
 #' Perform Adaptive Elastic Net with optimal adaptive weights
@@ -1549,10 +1554,6 @@ predictECM <- function(x, newdata, yname,
 #' @param d.prefix Character: a regex for identifying differenced variables.
 #' @param lag.prefix Character: a regex for identifying lagged variables.
 #'
-#' TODO: create a class for ECMs for easier prediction and estimation.
-#' So far, there are too many functions not using any meta-information.
-#' TODO: this can be achieved by merging getECM and printECM into a unified
-#' function that can handle models with different variables in the SR/LR parts.
 #'
 #' @return A named list with separated ECM components (named vectors).
 #' @export
@@ -1729,6 +1730,4 @@ plotContribECM <- function(x, single.plot = TRUE, col = NULL,
 
   return(invisible(NULL))
 }
-
-# TODO: add a wrapper for constrained estimation within a corridor
 
