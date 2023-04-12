@@ -681,10 +681,8 @@ diagnoseSeasonalityOne <- function(x, calendar = NULL, name = "(noname)",
   if (!(easter %in% c("yes", "no", "auto"))) stop("'easter' must be 'yes', 'no', or 'auto'.")
 
   force.annual <- force.annual[1]
-  if (force.annual == "no") {
-    force.annual <- "none"
-    force <- FALSE
-  } else force <- TRUE
+  if (force.annual == "no") force.annual <- "none"
+  force <- force.annual != "none"
   if (!(force.annual %in% c("none", "regress", "denton"))) stop("'force.annual' must be 'none', 'regress', or 'denton'.")
 
   sa.rule <- sa.rule[1]
